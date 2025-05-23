@@ -6,7 +6,7 @@ app = FastAPI()
 
 # python -m src.cleeroute.main  // pour lancer le serveur
 
-@app.post("/generate")
+@app.post("/course-generated")
 def generate_course(request: CourseInput):
     """
         ## Generates a complete course structure based on specified parameters.
