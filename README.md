@@ -20,7 +20,7 @@ crewai install
 ```
 ### Customizing
 
-**Add your `OPENAI_API_KEY` into the `.env` file**
+**Add your `OPENAI_API_KEY`, `GEMINI_API_KEY`,`SERPER_API_KEY` and `MODEL=gemini/gemini-2.5-flash-preview-04-17`  into the `.env` file**
 
 - Modify `src/cleeroute/config/agents.yaml` to define your agents
 - Modify `src/cleeroute/config/tasks.yaml` to define your tasks
