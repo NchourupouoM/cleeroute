@@ -1,0 +1,20 @@
+# =================================== Meta data Agents ===========================
+Meta_data_courses_researcher_task:
+  description: >
+    Analyse the learner's response {response} and generate a structured learning plan with:
+    1. **Domain**: Broad field (e.g., "Technology", "Business", "Science").
+    2. **Category**: Subfield (e.g., "Artificial Intelligence", "Digital Marketing").
+    3. **Topics**: Specific subjects (e.g., ["Neural Networks", "Computer Vision"]).
+    4. **Objectives**: a complete sentences describing what the learner aims to achieve. Use first-person language.
+    5. **Expectations**: 3-5 complete sentences (positive or negative) about the learner's current knowledge/skills. Example: "I don’t yet understand how backpropagation works."
+    6. **Prerequisites**: 3-5 items listing required knowledge/skills (e.g., "Basic Python programming")
+  expected_output: >
+    A JSON-like structure with:
+      - title: str (concise summary of the goal)
+      - domain: str 
+      - category: str 
+      - topics: List[str]
+      - objectives: str 
+      - expectations: List[str] 
+      - prerequisites: List[str]
+  agent: Meta_data_courses_researcher

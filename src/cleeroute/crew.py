@@ -1,6 +1,6 @@
-from crewai import Agent, Crew, Process, Task, LLM
+from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
-from .models import Course
+from .models import Course, Course_meta_datas
 import os
 from crewai_tools import SerperDevTool, WebsiteSearchTool
 import os
@@ -10,14 +10,41 @@ load_dotenv()
 serper_dev_tool = SerperDevTool()
 web_dev_tool = WebsiteSearchTool()
 
-# llm = LLM(
-#     model='gemini/gemini-2.0-flash',
-#     api_key=os.environ["GEMINI_API_KEY"]
-# )
+# =================================== Meta data Crew ===========================
+@CrewBase
+class Course_meta_datas_crew():
+    """Course_meta_datas_crew crew"""
+    agents_config = 'config/agents_2.yaml'
+    tasks_config = 'config/tasks_2.yaml'
+
+    @agent
+    def Meta_data_courses_researcher(self)->Agent:
+        return Agent(
+            config= self.agents_config["Meta_data_courses_researcher"],
+        )
+    
+    @task
+    def Meta_data_courses_researcher_task(self)->Task:
+        return Task(
+            config= self.tasks_config["Meta_data_courses_researcher_task"],
+            output_json = Course_meta_datas
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        """Creates the Course_meta_datas_crew crew"""
+        return Crew(
+            agents=self.agents, 
+            tasks=self.tasks,
+            process=Process.sequential,
+            verbose=True,
+        )
+    
+# ================================== Course structure Crew =====================
 
 @CrewBase
-class Cleeroute():
-    """Cleeroute crew"""
+class Course_structure_crew():
+    """Course_structure_crew crew"""
     agents_config = 'config/agents.yaml'
     tasks_config = 'config/tasks.yaml'
 
@@ -27,7 +54,6 @@ class Cleeroute():
         return Agent(
             config=self.agents_config['Company_researcher'],
             tools=[serper_dev_tool,web_dev_tool],
-            # llm=llm,
             verbose=True
         )
 
@@ -36,16 +62,6 @@ class Cleeroute():
         return Agent(
             config=self.agents_config['Course_planner'],
             tools=[serper_dev_tool,web_dev_tool],
-            # llm= llm,
-            verbose=True
-        )
-
-    @agent
-    def quiz_builder(self) -> Agent:
-        return Agent(
-            config=self.agents_config['quiz_builder'],
-            tools=[serper_dev_tool,web_dev_tool],
-            # llm=llm,
             verbose=True
         )
 
@@ -54,7 +70,6 @@ class Cleeroute():
         return Agent(
             config=self.agents_config['project_builder'],
             tools=[serper_dev_tool,web_dev_tool],
-            # llm=llm,
             verbose=True
         )
     
@@ -63,7 +78,6 @@ class Cleeroute():
         return Agent(
             config=self.agents_config['Course_compiler'],
             tools=[serper_dev_tool,web_dev_tool],
-            # llm=llm,
             verbose=True
         )
 
@@ -81,12 +95,6 @@ class Cleeroute():
         )
     
     @task
-    def Quiz_builder_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['Quiz_builder_task'],
-        )
-    
-    @task
     def project_builder_task(self) -> Task:
         return Task(
             config=self.tasks_config['project_builder_task'],
@@ -96,12 +104,12 @@ class Cleeroute():
     def Course_compiler_task(self) -> Task:
         return Task(
             config=self.tasks_config['Course_compiler_task'],
-            output_pydantic= Course,
+            output_json= Course,
         )
 
     @crew
     def crew(self) -> Crew:
-        """Creates the Cleeroute crew"""
+        """Creates the Course_structure_crew crew"""
         return Crew(
             agents=self.agents, 
             tasks=self.tasks,
