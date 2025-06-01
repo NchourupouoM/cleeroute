@@ -5,6 +5,11 @@ on:
     branches:
       - master
 
+env:
+  ACR_NAME: cleerouteaiapi
+  CONTAINER_APP_NAME: cleerouteapicontainer
+  RESOURCE_GROUP: cleeroute-gofiber-rg
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,10 +22,20 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Build and deploy Container App
+      - name: Login to Azure Container Registry
+        run: |
+          az acr login --name $ACR_NAME
+
+      - name: Build and push container image
+        run: |
+          docker build -t $ACR_NAME.azurecr.io/$CONTAINER_APP_NAME:${{ github.run_id }} .
+          docker push $ACR_NAME.azurecr.io/$CONTAINER_APP_NAME:${{ github.run_id }}
+
+      - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
           appSourcePath: ${{ github.workspace }}
-          acrName: cleerouteaiapi
-          containerAppName: cleerouteapicontainer
-          resourceGroup: cleeroute-gofiber-rg
+          acrName: $ACR_NAME
+          containerAppName: $CONTAINER_APP_NAME
+          resourceGroup: $RESOURCE_GROUP
+          imageToDeploy: $ACR_NAME.azurecr.io/$CONTAINER_APP_NAME:${{ github.run_id }}
