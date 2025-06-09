@@ -7,7 +7,7 @@ class Course_meta_datas_input(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "response":"I want to learn convolutional neural network"
+                "response":"I want to speak english like a native"
             }
         }
 
