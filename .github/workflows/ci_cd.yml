@@ -22,15 +22,15 @@ jobs:
 
     - name: 'Build and push Docker image'
       run: |
-        docker build . -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/cleeroute-ai-api:${{ github.sha }}
-        docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/cleeroute-ai-api:${{ github.sha }}
+        docker build . -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/cleeroute_api:${{ github.sha }}
+        docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/cleeroute_api:${{ github.sha }}
 
     - name: 'Deploy to Azure Container Apps'
       uses: azure/container-apps-deploy-action@v1 
       with:
         containerAppName: cleeroute-ai-api 
         resourceGroup: ${{ secrets.RESOURCE_GROUP }} 
-        imageToDeploy: ${{ secrets.REGISTRY_LOGIN_SERVER }}/cleeroute-ai-api:${{ github.sha }}
+        imageToDeploy: ${{ secrets.REGISTRY_LOGIN_SERVER }}/cleeroute_api:${{ github.sha }}
         registryUrl: ${{ secrets.REGISTRY_LOGIN_SERVER }}
         registryUsername: ${{ secrets.REGISTRY_USERNAME }}
         registryPassword: ${{ secrets.REGISTRY_PASSWORD }}
