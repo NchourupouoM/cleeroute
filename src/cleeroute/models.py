@@ -27,25 +27,28 @@ class CourseInput(Course_meta_datas):
         json_schema_extra = {
             "examples": [
                 {
-                "title": "Natural Language Processing Fundamentals",
-                "domain": "Technology",
-                "category": "Artificial Intelligence",
-                "topics": "Text Preprocessing, Word Embeddings, Transformer Models",
+                "title": "Achieving Native-like English Fluency",
+                "domain": "Language Learning",
+                "category": "English Language Learning",
+                "topics": "Speaking skills, Pronunciation, English idioms, Fluency, Accent Reduction",
                 "objectives": [
-                        "Tokenize and clean text data",
-                        "Implement Word2Vec from scratch",
-                        "Fine-tune a BERT model for sentiment analysis"
-                    ],
+                    "My objective is to develop my English speaking ability to a native-like level, focusing on natural flow, idiomatic expression, accurate pronunciation, and nuanced communication."
+                ],
                 "expectations": [
-                        "I'm comfortable with Python but new to NLP",
-                        "I expect transformers to be challenging initially"
-                    ],
+                    "I can already understand and participate in basic English conversations.",
+                    "I have a reasonable vocabulary and understanding of core grammar.",
+                    "I don't yet sound natural when I speak.",
+                    "I want to reduce my foreign accent.",
+                    "I struggle with using idioms and colloquialisms correctly."
+                ],
                 "prerequisites": [
-                        "Python",
-                        "Basic probability",
-                        "Pandas library"
-                    ],
-                "desired_level": "Intermediate"
+                    "Intermediate level of English proficiency (B1/B2 or higher)",
+                    "Basic understanding of English grammar",
+                    "Core vocabulary knowledge",
+                    "Ability to understand spoken English",
+                    "Prior experience with English conversation practice"
+                ],
+                "desired_level": "advanced"
                 }
             ]
         }
