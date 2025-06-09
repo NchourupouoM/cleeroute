@@ -2,13 +2,10 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from .models import Course, Course_meta_datas
 import os
-from crewai_tools import SerperDevTool, WebsiteSearchTool, FileReadTool
+from crewai_tools import SerperDevTool, WebsiteSearchTool
 import os
 from dotenv import load_dotenv
 load_dotenv() 
-
-serper_dev_tool = SerperDevTool()
-web_dev_tool = WebsiteSearchTool()
 
 # =================================== Meta data Crew ===========================
 @CrewBase
@@ -53,7 +50,6 @@ class Course_structure_crew():
     def Company_researcher(self) -> Agent:
         return Agent(
             config=self.agents_config['Company_researcher'],
-            tools=[serper_dev_tool,web_dev_tool],
             verbose=True
         )
 
@@ -61,7 +57,6 @@ class Course_structure_crew():
     def Course_planner(self) -> Agent:
         return Agent(
             config=self.agents_config['Course_planner'],
-            tools=[serper_dev_tool,web_dev_tool],
             verbose=True
         )
 
@@ -69,7 +64,6 @@ class Course_structure_crew():
     def project_builder(self) -> Agent:
         return Agent(
             config=self.agents_config['project_builder'],
-            tools=[serper_dev_tool,web_dev_tool],
             verbose=True
         )
     
@@ -77,7 +71,6 @@ class Course_structure_crew():
     def Course_compiler(self) -> Agent:
         return Agent(
             config=self.agents_config['Course_compiler'],
-            tools=[serper_dev_tool,web_dev_tool],
             verbose=True
         )
 

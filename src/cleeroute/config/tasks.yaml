@@ -9,7 +9,7 @@ Company_researcher_task:
 
 Course_planner_task:
     description: >
-      Based on the {title} and {topics} concepts,the domain {domain}, the category {category} the learner's objectives {objectives}, the expectation {expectations} ,and prerequisites {prerequisites} and the disired level {disired_level}, create a well-structured course outline. The structure should be divided into sections and subsections, and must facilitate progressive learning.
+      Based on the {title} and {topics} concepts,the domain {domain}, the category {category} the learner's objectives {objectives}, the expectation {expectations} ,and prerequisites {prerequisites} and the disired level {desired_level}, create a well-structured course outline. The structure should be divided into sections and subsections, and must facilitate progressive learning.
     expected_output: >
       A hierarchical course structure formatted in json, including section titles, the description of this section and their associated subsections et their description too. You will use the experiences of compagnies provided by the Company_researcher agent to create a personalized course structure You will use the experiences of compagnies provided by the Company_researcher agent in field of {title} and {topics} concepts to create a personalized course structure. don't put nomber or enumerate the title section.
     agent: Course_planner

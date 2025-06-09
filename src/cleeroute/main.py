@@ -30,7 +30,7 @@ async def add_process_time_header(request: Request, call_next):
 
 @app.post("/gen_course_meta_data")
 def generate_obj_pre(request: Course_meta_datas_input):
-    try:
+    try:    
         result_obj = Course_meta_datas_crew().crew().kickoff(inputs=request.model_dump())
         return result_obj.json_dict
     except Exception as e:
