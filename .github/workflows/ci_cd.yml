@@ -1,41 +1,37 @@
-name: Azure Container Apps Deploy
-
-on:
-  push:
-    branches:
-      - master
-
-env:
-  ACR_NAME: cleerouteaiapi
-  CONTAINER_APP_NAME: cleerouteapicontainer
-  RESOURCE_GROUP: cleeroute-gofiber-rg
+on: [push]
+name: Linux_Container_Workflow
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+    build-and-deploy:
+        runs-on: ubuntu-latest
+        steps:
+        # checkout the repo
+        - name: 'Checkout GitHub Action'
+          uses: actions/checkout@main
+          
+        - name: 'Login via Azure CLI'
+          uses: azure/login@v1
+          with:
+            creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+        - name: 'Build and push image'
+          uses: azure/docker-login@v1
+          with:
+            login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+            username: ${{ secrets.REGISTRY_USERNAME }}
+            password: ${{ secrets.REGISTRY_PASSWORD }}
+        - run: |
+            docker build . -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/sampleapp:${{ github.sha }}
+            docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/sampleapp:${{ github.sha }}
 
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Login to Azure Container Registry
-        run: |
-          az acr login --name $ACR_NAME
-
-      - name: Build and push container image
-        run: |
-          docker build -t $ACR_NAME.azurecr.io/$CONTAINER_APP_NAME:${{ github.run_id }} .
-          docker push $ACR_NAME.azurecr.io/$CONTAINER_APP_NAME:${{ github.run_id }}
-
-      - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          appSourcePath: ${{ github.workspace }}
-          acrName: $ACR_NAME
-          containerAppName: $CONTAINER_APP_NAME
-          resourceGroup: $RESOURCE_GROUP
-          imageToDeploy: $ACR_NAME.azurecr.io/$CONTAINER_APP_NAME:${{ github.run_id }}
+        - name: 'Deploy to Azure Container Instances'
+          uses: 'azure/aci-deploy@v1'
+          with:
+            resource-group: ${{ secrets.RESOURCE_GROUP }}
+            dns-name-label: ${{ secrets.RESOURCE_GROUP }}${{ github.run_number }}
+            image: ${{ secrets.REGISTRY_LOGIN_SERVER }}/sampleapp:${{ github.sha }}
+            registry-login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+            registry-username: ${{ secrets.REGISTRY_USERNAME }}
+            registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+            name: cleerouteaiacr
+            location: 'west europe'

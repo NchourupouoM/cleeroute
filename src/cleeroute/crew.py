@@ -2,7 +2,7 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from .models import Course, Course_meta_datas
 import os
-from crewai_tools import SerperDevTool, WebsiteSearchTool
+from crewai_tools import SerperDevTool, WebsiteSearchTool, FileReadTool
 import os
 from dotenv import load_dotenv
 load_dotenv() 

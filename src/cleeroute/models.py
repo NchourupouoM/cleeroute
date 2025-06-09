@@ -19,7 +19,7 @@ class Course_meta_datas(BaseModel):
     objectives: List[str]
     expectations: List[str]
     prerequisites: List[str]
-    disired_level: str
+    desired_level: str
 
 class CourseInput(Course_meta_datas):
     
