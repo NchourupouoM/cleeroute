@@ -24,6 +24,7 @@ project_builder_task:
     3. Include at least 3 interdependent steps (e.g., research, implementation, testing, iteration).
     4. Have clear success criteria and a tangible output (e.g., prototype, report, algorithm).
     5. Challenge the learner to think critically and creatively.
+    NB: all projects must be coherent with the course structure and the topics covered in each section. make sure to use the experiences of compagnies provided by the Company_researcher agent in field of {title} and {topics} concepts to create a personalized project. also, all projects must have content, don't return empty project.
   expected_output: >
     A structured project brief with:
     - Title: Clear, action-oriented name.
