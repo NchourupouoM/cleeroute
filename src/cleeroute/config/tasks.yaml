@@ -1,54 +1,54 @@
 # ==================================== Course structure Tasks ===================
-
-Company_researcher_task:
+Design_Industry_Informed_Course:
   description: >
-    Search for the 5 most well-known companies in the field of {title} and provide a list of their names.
+    First, research and identify the 5 most well-known companies in the field of {title}, specifically 
+    related to {topics}, and list their names.
+    Second, using this company information, along with the provided domain ({domain}), category ({category}), 
+    learner's objectives ({objectives}), expectations ({expectations}), prerequisites ({prerequisites}), 
+    and desired level ({desired_level}), create a well-structured course outline for {title} focusing on {topics}. 
+    The structure should be divided into sections and subsections, and must facilitate progressive learning.
   expected_output: >
-    A list of company names in the {title} industry, formatted in markdown.
-  agent: Company_researcher
+    A hierarchical course structure formatted in JSON. This structure will include section titles, 
+    a description for each section, and their associated subsections with their respective descriptions. 
+    The course design will leverage insights from the researched leading companies in the {title} and {topics} field. 
+    Do not number or enumerate the section titles.
+  agent: Comprehensive_Course_Architect
 
-Course_planner_task:
-    description: >
-      Based on the {title} and {topics} concepts,the domain {domain}, the category {category} the learner's objectives {objectives}, the expectation {expectations} ,and prerequisites {prerequisites} and the disired level {desired_level}, create a well-structured course outline. The structure should be divided into sections and subsections, and must facilitate progressive learning.
-    expected_output: >
-      A hierarchical course structure formatted in json, including section titles, the description of this section and their associated subsections et their description too. You will use the experiences of compagnies provided by the Company_researcher agent to create a personalized course structure You will use the experiences of compagnies provided by the Company_researcher agent in field of {title} and {topics} concepts to create a personalized course structure. don't put nomber or enumerate the title section.
-    agent: Course_planner
-    context:
-      - Company_researcher_task
-
-project_builder_task:
+Finalize_Comprehensive_Course_Package:
   description: >
-    Design a complex, multi-stage project in each section. each projet must based on the current course section and all previous sections. The project must:
-    1. Solve a real-world problem in a practical, measurable way.
-    2. Require the learner to combine knowledge from the current session and prior sessions.
-    3. Include at least 3 interdependent steps (e.g., research, implementation, testing, iteration).
-    4. Have clear success criteria and a tangible output (e.g., prototype, report, algorithm).
-    5. Challenge the learner to think critically and creatively.
-    NB: all projects must be coherent with the course structure and the topics covered in each section. make sure to use the experiences of compagnies provided by the Company_researcher agent in field of {title} and {topics} concepts to create a personalized project. also, all projects must have content, don't return empty project.
+    Your comprehensive task is twofold:
+    1.  **Project Design:** For each section outlined in the provided course structure (from the 'Design_Industry_Informed_Course' context), design one complex, multi-stage project. Each project must:
+    -   Be based on the current course section's content and integrate knowledge from all previous sections.
+    -   Solve a real-world problem relevant to {title} and {topics} in a practical, measurable way, leveraging company experiences/insights previously gathered.
+    -   Require the learner to combine knowledge from the current session and prior sessions.
+    -   Include at least 3 interdependent steps (e.g., research, implementation, testing, iteration).
+    -   Have clear success criteria and a tangible output (e.g., prototype, report, algorithm).
+    -   Challenge the learner to think critically and creatively.
+    -   Ensure all projects have substantial content and are not empty.
+    2.  **Course Compilation:** Once all projects are designed, assemble the complete course package for {title}. 
+        This involves:
+    -   Integrating the main course structure (sections, subsections, descriptions) from the 'Design_Industry_Informed_Course' context.
+    -   Embedding the detailed project brief you designed for each section.
+    -   Including a list of suggested quiz questions or key concepts to be quizzed for each section/session (you can generate these based on the section content).
+    -   Ensuring consistent titles, language, and a smooth instructional flow throughout.
+    -   Formatting the entire output as a clean, well-structured JSON document, ready for publication or API delivery.
+    -   The JSON should include a course title and a brief introduction.
   expected_output: >
-    A structured project brief with:
-    - Title: Clear, action-oriented name.
-    - description
-    - Objective: Real-world problem it solves.
-    - Prerequisites: List of concepts from current/prior sessions needed.
-    - Steps: Detailed, sequential tasks (min. 3 steps).
-    - Deliverable: Tangible output format (e.g., code, presentation, model).
-    - evaluation criteria: How the solution will be evaluated.
-  agent: project_builder
+    A single, fully compiled course document in JSON format. This document must include:
+    - "course_title": The title of the course.
+    - "course_introduction": A brief introduction to the course.
+    - "sections": An array of section objects. Each section object should contain:
+      - "section_title": The title of the section (do not number).
+      - "section_description": A description of the section.
+      - "subsections": An array of subsection objects (if any), each with "subsection_title" and "subsection_description".
+      - "project": An object detailing the hands-on project for that section, including:
+        - "project_title": Clear, action-oriented name.
+        - "project_description": Overview of the project.
+        - "project_objective": Real-world problem it solves.
+        - "project_prerequisites": List of concepts from current/prior sessions needed.
+        - "project_steps": An array of detailed, sequential task descriptions (min. 3 steps).
+        - "project_deliverable": Description of the tangible output format.
+        - "project_evaluation_criteria": How the solution will be evaluated.
+  agent: Lead_Curriculum_Finalizer
   context:
-    - Course_planner_task
-
-Course_compiler_task:
-  description: >
-    Assemble a complete course package on {title}, using the structure, quizzes, and project materials generated by the other agents. Format everything clearly and coherently, organizing the course into sections and subsections. Ensure consistency in titles, language, and instructional flow. Return a clean, well-structured document, preferably in json ready to be served via API exported. The document should be ready for publication or API delivery.
-  expected_output: >
-    A fully compiled course document including: 
-    - Course title and introduction
-    - Sections and subsections with their descriptions,
-    - A list of quiz questions per session,
-    - A hands-on project at the end of each section,
-    - Proper formatting for publication or API delivery (json).
-  agent: Course_compiler
-  context:
-    - Course_planner_task
-    - project_builder_task
+    - Design_Industry_Informed_Course

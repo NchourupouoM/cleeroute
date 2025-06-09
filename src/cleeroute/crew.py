@@ -43,56 +43,30 @@ class Course_structure_crew():
 
     ### Buildings agents
     @agent
-    def Company_researcher(self) -> Agent:
+    def Comprehensive_Course_Architect(self) -> Agent:
         return Agent(
-            config=self.agents_config['Company_researcher'],
-            verbose=True
-        )
-
-    @agent
-    def Course_planner(self) -> Agent:
-        return Agent(
-            config=self.agents_config['Course_planner'],
-            verbose=True
-        )
-
-    @agent
-    def project_builder(self) -> Agent:
-        return Agent(
-            config=self.agents_config['project_builder'],
+            config=self.agents_config['Comprehensive_Course_Architect'],
             verbose=True
         )
     
     @agent
-    def Course_compiler(self) -> Agent:
+    def Lead_Curriculum_Finalizer(self) -> Agent:
         return Agent(
-            config=self.agents_config['Course_compiler'],
+            config=self.agents_config['Lead_Curriculum_Finalizer'],
             verbose=True
         )
 
     ### Building task
     @task
-    def Company_researcher_task(self) -> Task:
+    def Design_Industry_Informed_Course(self) -> Task:
         return Task(
-            config=self.tasks_config['Company_researcher_task'],
+            config=self.tasks_config['Design_Industry_Informed_Course'],
         )
     
     @task
-    def Course_planner_task(self) -> Task:
+    def Finalize_Comprehensive_Course_Package(self) -> Task:
         return Task(
-            config=self.tasks_config['Course_planner_task'],
-        )
-    
-    @task
-    def project_builder_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['project_builder_task'],
-        )
-    
-    @task
-    def Course_compiler_task(self) -> Task:
-        return Task(
-            config=self.tasks_config['Course_compiler_task'],
+            config=self.tasks_config['Finalize_Comprehensive_Course_Package'],
             output_json= Course,
         )
 
