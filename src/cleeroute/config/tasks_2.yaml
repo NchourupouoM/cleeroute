@@ -2,14 +2,14 @@
 Meta_data_courses_researcher_task:
   description: >
     Analyse the learner's response {response} and generate a structured learning plan with:
-    1. Domain
-    2. Category
+    1. Domains
+    2. Categories
     3. Topics
     4. Objectives: a complete sentences describing what the learner aims to achieve. Use first-person language.
     5. Expectations: 3-5 complete sentences (positive or negative) about the learner's current knowledge/skills. Example: "I don’t yet understand how backpropagation works."
     6. Prerequisites: 3-5 items listing required knowledge/skills. 
     7. desired_level(beginner, intermediate and advanced)
-    you will only use this ( domain, categories: topics) {
+    you will only use this ( domains, categories: topics) {
     - Academic Subjects
     	- Mathematics: algebra, calculus, geometry, trigonometry, statistics, probability, number theory, logic, topology, differential equations, discrete mathematics, linear algebra, abstract algebra, complex analysis, real analysis, numerical analysis, optimization, game theory, set theory, combinatorics, graph theory, mathematical modeling, cryptography, vector calculus, tensor analysis, fourier analysis, measure theory, functional analysis, chaos theory, fractal geometry, boolean algebra, ring theory, group theory, field theory, homological algebra, algebraic geometry, differential geometry, projective geometry, non-euclidean geometry, combinatorial geometry, integral geometry, convex geometry, probability distributions, regression analysis, hypothesis testing, statistical inference, stochastic processes, markov chains, queuing theory, operations research, algorithm design, computational complexity, information theory, coding theory, computability theory, axiomatic set theory, model theory, proof theory, category theory, lattice theory, order theory, number systems, prime numbers, diophantine equations, modular arithmetic, elliptic curves, analytic number theory, algebraic number theory, transcendental number theory, point-set topology, algebraic topology, geometric topology, knot theory, manifold theory, ordinary differential equations, partial differential equations, dynamical systems, numerical methods, finite element method, monte carlo method, linear programming, integer programming, dynamic programming, network analysis, decision theory, utility theory, risk analysis, mathematical finance, mathematical biology, mathematical physics, mathematical chemistry, mathematical economics, mathematical psychology, mathematical sociology, actuarial science, control theory, systems theory, simulation, statistical mechanics, fluid dynamics, elasticity, relativity, quantum mechanics, string theory, bayesian statistics, time series analysis, survival analysis, experimental design, multivariate statistics, non-parametric statistics, computational statistics, data mining, machine learning, cryptography, error-correcting codes, automata theory, formal languages, lambda calculus, type theory, numerical linear algebra, matrix theory, eigenvalue problems, graph algorithms, network flows, combinatorial optimization, approximation algorithms, randomized algorithms, computational geometry, symbolic computation, computer algebra systems, mathematical software, history of mathematics, philosophy of mathematics, recreational mathematics
     	- Biology : cell biology, genetics, evolution, ecology, physiology, anatomy, botany, zoology, microbiology, biochemistry, molecular biology, immunology, biophysics, bioinformatics, developmental biology, neurobiology, paleontology, marine biology, conservation biology, astrobiology, chronobiology, endocrinology, epidemiology, ethology, genetics, genomics, proteomics, metabolomics, transcriptomics, epigenetics, population genetics, phylogenetics, systematics, taxonomy, morphology, histology, cytology, embryology, virology, bacteriology, mycology, parasitology, pathology, pharmacology, toxicology, immunology, neurophysiology, electrophysiology, biomechanics, biotechnology, synthetic biology, systems biology, theoretical biology, mathematical biology, computational biology, structural biology, plant science, animal science, human biology, organismal biology, population biology, community ecology, ecosystem ecology, landscape ecology, global ecology, behavioral ecology, evolutionary ecology, restoration ecology, invasion biology, biodiversity, biogeography, climate change biology, cell cycle, mitosis, meiosis, dna replication, transcription, translation, gene expression, mutation, genetic recombination, natural selection, adaptation, speciation, extinction, phylogeny, homeostasis, metabolism, photosynthesis, cellular respiration, fermentation, enzyme kinetics, signal transduction, cell communication, membrane transport, cytoskeleton, organelles, tissues, organs, organ systems, nervous system, endocrine system, circulatory system, respiratory system, digestive system, excretory system, reproductive system, musculoskeletal system, integumentary system, immune system, plant anatomy, plant physiology, plant reproduction, plant development, animal behavior, animal communication, animal navigation, animal migration, sociobiology, primatology, entomology, ornithology, ichthyology, herpetology, mammalogy, biogeochemical cycles, nutrient cycling, energy flow, food webs, species interactions, symbiosis, parasitism, mutualism, commensalism, competition, predation, herbivory, paleobotany, paleozoology, paleoecology, human evolution, human genetics, medical genetics, cancer biology, virology, immunology, epidemiology, toxicology, pharmacology, bioinformatics tools, sequence alignment, phylogenetic analysis, microarray analysis, next-generation sequencing, crispr, gene editing, microscopy, electrophoresis, chromatography, spectroscopy, centrifugation, cell culture, animal models, plant models, statistical analysis in biology, experimental design in biology, scientific method in biology
@@ -490,11 +490,11 @@ Meta_data_courses_researcher_task:
   expected_output: >
     A JSON-like structure with:
       - title: str (concise summary of the goal)
-      - domain: str 
-      - category: str 
+      - domains: List[str]
+      - categories: List[str] 
       - topics: List[str]
-      - objectives: str 
-      - expectations: List[str] 
+      - objectives: str
+      - expectations: List[str]
       - prerequisites: List[str]
       - desired_level: str # beginner, intermediate or advanced
   agent: Meta_data_courses_researcher

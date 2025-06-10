@@ -13,9 +13,9 @@ class Course_meta_datas_input(BaseModel):
 
 class Course_meta_datas(BaseModel):
     title: str 
-    domain: str 
-    category: str 
-    topics: str
+    domains: List[str] 
+    categories: List[str] 
+    topics: List[str]
     objectives: List[str]
     expectations: List[str]
     prerequisites: List[str]
@@ -26,32 +26,52 @@ class CourseInput(Course_meta_datas):
     class Config:
         json_schema_extra = {
             "examples": [
-                {
-                "title": "Achieving Native-like English Fluency",
-                "domain": "Language Learning",
-                "category": "English Language Learning",
-                "topics": "Speaking skills, Pronunciation, English idioms, Fluency, Accent Reduction",
+            {
+                "title": "Achieving Native-Like English Fluency",
+                "domains": [
+                    "Language Learning"
+                ],
+                "categories": [
+                    "English Language Learning",
+                    "Accent Reduction"
+                ],
+                "topics": [
+                    "pronunciation",
+                    "speaking skills",
+                    "fluency",
+                    "conversation practice",
+                    "english idioms",
+                    "phrasal verbs",
+                    "intonation",
+                    "rhythm",
+                    "stress patterns",
+                    "phonetics",
+                    "grammar",
+                    "vocabulary"
+                ],
                 "objectives": [
-                    "My objective is to develop my English speaking ability to a native-like level, focusing on natural flow, idiomatic expression, accurate pronunciation, and nuanced communication."
+                    "I will develop the ability to speak English with native-like fluency and natural pronunciation.",
+                    "I will expand my vocabulary and command of idiomatic expressions to sound more natural and nuanced.",
+                    "I will gain confidence in engaging in spontaneous conversations across various topics.",
+                    "I will refine my understanding and use of complex grammatical structures in spoken English."
                 ],
                 "expectations": [
-                    "I can already understand and participate in basic English conversations.",
-                    "I have a reasonable vocabulary and understanding of core grammar.",
-                    "I don't yet sound natural when I speak.",
-                    "I want to reduce my foreign accent.",
-                    "I struggle with using idioms and colloquialisms correctly."
+                    "I want to improve my fluency so I don't hesitate when speaking.",
+                    "I expect to reduce my foreign accent to sound more natural.",
+                    "I anticipate learning and using more natural phrases and idioms.",
+                    "I might not yet be comfortable using complex grammatical structures spontaneously.",
+                    "I may struggle with understanding fast or informal native speech."
                 ],
                 "prerequisites": [
-                    "Intermediate level of English proficiency (B1/B2 or higher)",
-                    "Basic understanding of English grammar",
-                    "Core vocabulary knowledge",
-                    "Ability to understand spoken English",
-                    "Prior experience with English conversation practice"
+                    "Basic understanding of English grammar (e.g., sentence structure, common tenses).",
+                    "A foundational English vocabulary (A2/B1 level or equivalent).",
+                    "Ability to form simple sentences and convey basic ideas in English.",
+                    "Familiarity with the English alphabet and basic pronunciation."
                 ],
                 "desired_level": "advanced"
-                }
-            ]
-        }
+            }
+        ]
+    }
 
 class Project(BaseModel):
     title: str
