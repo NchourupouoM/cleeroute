@@ -92,6 +92,6 @@ async def search_videos(request: VideoSearch):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="127.0.0.1", port=8000, reload=True, )#workers=4)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000, reload=True, )#workers=4)
