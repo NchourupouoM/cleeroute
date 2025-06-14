@@ -3,3 +3,6 @@ uvicorn
 pydantic
 crewai
 crewai_tools
+sentence-transformers
+psycopg2-binary
+pgvector
