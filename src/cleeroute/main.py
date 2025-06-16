@@ -7,7 +7,7 @@ from typing import List
 import time 
 
 from src.cleeroute.db.models import VideoSearch, VideoResponse
-from src.cleeroute.db.services import search_similar_videos
+from src.cleeroute.db.services import  fetch_channel_categories, search_videos_pgvector_manual_string #search_similar_videos,
 from src.cleeroute.db.db import get_db_connection
 
 app = FastAPI()
@@ -72,25 +72,44 @@ def generate_course_structure(request: CourseInput):
 
 @app.post("/search", response_model=List[VideoResponse])
 async def search_videos(request: VideoSearch):
-    conn = get_db_connection()
+    # 1. Initialize the list of videos you will return BEFORE the loop.
+    response_videos = []
+    conn = None # Initialize conn to None
+
     try:
-        videos = search_similar_videos(request)
-        response_videos = []
-        for video_tuple in videos:
-            response_videos.append(
-                VideoResponse(
-                    thumbnail=video_tuple[0],
-                    url=video_tuple[1],
-                    duration=video_tuple[2],                      
-                    title=video_tuple[3], 
+        conn = get_db_connection()
+        channel_names_list = fetch_channel_categories(request.category)
+        top_videos = search_videos_pgvector_manual_string(request.subsection, channel_names_list, top_k=100)
+
+        # 2. Check if top_videos is not None and has items before looping.
+        #    This 'if top_videos:' check gracefully handles both `None` and an empty list `[]`.
+        if top_videos:
+            # 3. Loop directly over the items in `top_videos`. Do not use enumerate.
+            for video_data in top_videos:
+                response_videos.append(
+                    VideoResponse(
+                        # `video_data` is now the dictionary or row object, so you can access its items.
+                        # Using .get() is safe as it provides a default value if a key is missing.
+                        thumbnail=video_data.get('thumbnail', 'N/A'),
+                        url=video_data.get('video_id', 'N/A'),
+                        duration=video_data.get('duration', 'N/A'),                      
+                        title=video_data.get('title', 'N/A'), 
+                    )
                 )
-            )
-        return response_videos
+
     except Exception as e:
-        print(e)
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # It's good practice to log the actual error for debugging
+        print(f"An error occurred during video search: {e}")
+        # Return a proper HTTP error instead of letting the server crash
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+    finally:
+        # Ensure the database connection is always closed
+        if conn:
+            conn.close()
+
+    # 4. Return the complete list AFTER the loop has finished.
+    return response_videos
     
 if __name__ == "__main__":
     import uvicorn
