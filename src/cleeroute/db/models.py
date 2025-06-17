@@ -27,3 +27,10 @@ class VideoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class PaginatedVideoResponse(BaseModel):
+    items: List[VideoResponse]
+    total_items: int
+    total_pages: int
+    current_page: int
+    page_size: int

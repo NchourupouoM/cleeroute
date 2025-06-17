@@ -1,14 +1,13 @@
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from src.cleeroute.crew import Course_structure_crew, Course_meta_datas_crew
 from src.cleeroute.models import CourseInput, Course_meta_datas_input
-from sqlalchemy.orm import Session
 from typing import List
 import time 
+import math
 
-from src.cleeroute.db.models import VideoSearch, VideoResponse
-from src.cleeroute.db.services import  fetch_channel_categories, search_videos_pgvector_manual_string #search_similar_videos,
-from src.cleeroute.db.db import get_db_connection
+from src.cleeroute.db.models import VideoSearch, VideoResponse, PaginatedVideoResponse
+from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string #search_similar_videos,
 
 app = FastAPI()
 
@@ -29,15 +28,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Model Configuration ---
+MODEL_CONFIG = {
+    "model_name": "intfloat/multilingual-e5-small",
+    "use_gpu": True,
+    "use_fp16": True 
+}
 
-
-# python -m src.cleeroute.main  // pour lancer le serveure
 
 # ======================== Meta data generator =====================================
-# {
-#   "response": "I want to learn convolutional neural network"
-# }
-
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     start_time = time.perf_counter() 
@@ -69,47 +68,77 @@ def generate_course_structure(request: CourseInput):
     
 
 # ===================== get videos by category for each subsection ===============
+MODEL_CONFIG = {
+    "model_name": "intfloat/multilingual-e5-small",
+    "use_gpu": True,
+    "use_fp16": True 
+}
+model = get_sentence_transformer_model(MODEL_CONFIG)
 
-@app.post("/search", response_model=List[VideoResponse])
-async def search_videos(request: VideoSearch):
+@app.post("/search", response_model=PaginatedVideoResponse)
+async def search_videos(
+    request: VideoSearch, 
+    page: int = Query(1, ge=1, description="Page number to retrieve"),
+    size: int = Query(10, ge=1, le=100, description="Number of items per page (max 100)")
+):
     # 1. Initialize the list of videos you will return BEFORE the loop.
-    response_videos = []
-    conn = None # Initialize conn to None
+    all_response_video_objects = []
 
     try:
-        conn = get_db_connection()
         channel_names_list = fetch_channel_categories(request.category)
-        top_videos = search_videos_pgvector_manual_string(request.subsection, channel_names_list, top_k=100)
+        top_k_results_from_search = 1000
+        top_videos = search_videos_pgvector_manual_string(
+            request.subsection, 
+            channel_names_list, 
+            model,
+            top_k = top_k_results_from_search
+        )
 
-        # 2. Check if top_videos is not None and has items before looping.
-        #    This 'if top_videos:' check gracefully handles both `None` and an empty list `[]`.
-        if top_videos:
-            # 3. Loop directly over the items in `top_videos`. Do not use enumerate.
-            for video_data in top_videos:
-                response_videos.append(
-                    VideoResponse(
-                        # `video_data` is now the dictionary or row object, so you can access its items.
-                        # Using .get() is safe as it provides a default value if a key is missing.
-                        thumbnail=video_data.get('thumbnail', 'N/A'),
-                        url=video_data.get('video_id', 'N/A'),
-                        duration=video_data.get('duration', 'N/A'),                      
-                        title=video_data.get('title', 'N/A'), 
-                    )
-                )
+        if not top_videos: # handle the case where no videos are found
+            return PaginatedVideoResponse(
+                items=[],
+                total_items=0,
+                total_pages=0,
+                current_page=page,
+                page_size=size
+            )
+        
+        # The pagination logique on top_videos
+        total_items = len(top_videos)
+        total_pages = math.ceil(total_items / size)
 
-    except Exception as e:
-        # It's good practice to log the actual error for debugging
-        print(f"An error occurred during video search: {e}")
-        # Return a proper HTTP error instead of letting the server crash
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        # make sure the page number is within the valid range
+        if page > total_pages and total_pages > 0: 
+             raise HTTPException(status_code=404, detail=f"Page not found. Total pages: {total_pages}")
+        
+        start_index = (page - 1) * size
+        end_index = start_index + size
+        videos_on_page = top_videos[start_index:end_index]
     
-    finally:
-        # Ensure the database connection is always closed
-        if conn:
-            conn.close()
+        for video_data in videos_on_page:
+            all_response_video_objects.append(
+                VideoResponse(
+                    thumbnail=video_data.get('thumbnail', 'N/A'),
+                    url=video_data.get('video_id', 'N/A'),
+                    duration=str(video_data.get('duration', '0')),
+                    title=video_data.get('title', 'N/A'),
+                )
+            )
+        return PaginatedVideoResponse(
+            items=all_response_video_objects,
+            total_items=total_items,
+            total_pages=total_pages,
+            current_page=page,
+            page_size=size
+        )
 
-    # 4. Return the complete list AFTER the loop has finished.
-    return response_videos
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"An error occurred during video search: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error: " + str(e))
     
 if __name__ == "__main__":
     import uvicorn
