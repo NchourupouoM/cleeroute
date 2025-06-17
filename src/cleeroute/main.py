@@ -118,6 +118,7 @@ async def search_videos(
         for video_data in videos_on_page:
             all_response_video_objects.append(
                 VideoResponse(
+                    channel_name=video_data.get('channel_name', 'N/A'),
                     thumbnail=video_data.get('thumbnail', 'N/A'),
                     url=video_data.get('video_id', 'N/A'),
                     duration=str(video_data.get('duration', '0')),

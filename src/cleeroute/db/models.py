@@ -24,6 +24,8 @@ class VideoResponse(BaseModel):
     url: str
     thumbnail: str
     duration: str
+    channel_name: str
+
 
     class Config:
         from_attributes = True
