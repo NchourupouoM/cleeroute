@@ -3,8 +3,7 @@ Design_Industry_Informed_Course:
   description: >
     First, research and identify the 5 most well-known companies in the field of {title}, specifically related to {topics}, and list their names. Second, using this company information, along with the provided domain ({domains}), categories ({categories}), learner's objectives ({objectives}), expectations ({expectations}), prerequisites ({prerequisites}), and desired level ({desired_level}), create a well-structured course outline for {title} focusing on {topics}. The structure should be divided into sections and subsections, and must facilitate progressive learning.
   expected_output: >
-    A hierarchical course structure formatted in JSON. This structure will include section titles, a description for each section, and their associated subsections with their respective descriptions. The course design will leverage insights from the researched leading companies in the {title} and {topics} field. 
-    Do not number or enumerate the section titles.
+    A hierarchical course structure formatted in JSON. This structure will include section titles, a description for each section, and their associated subsections with their respective descriptions. The course design will leverage insights from the researched leading companies in the {title} and {topics} field. Do not number or enumerate the section titles. Never return an empty content in any levekl of the structure.
   agent: Comprehensive_Course_Architect
 
 Finalize_Comprehensive_Course_Package:
