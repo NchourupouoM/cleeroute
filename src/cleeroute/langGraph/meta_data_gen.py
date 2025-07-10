@@ -18,7 +18,7 @@ load_dotenv()
 # --- Définitions (inchangées) ---
 llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL"), google_api_key=os.getenv("GEMINI_API_KEY"))
 
-# llm = ChatGroq(model="llama-3.1-8b-instant", api_key="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")
+# llm = ChatGroq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
 
 class GraphState(TypedDict):
     initial_request: Course_meta_datas_input
