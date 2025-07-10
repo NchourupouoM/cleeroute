@@ -6,3 +6,9 @@ crewai_tools
 sentence-transformers
 psycopg2-binary
 pgvector
+langchain
+langgraph
+langchain-google-genai
+langchain_community
+tavily-python
+python-dotenv

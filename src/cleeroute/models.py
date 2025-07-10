@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional,List
 from pydantic import BaseModel
 
 class Course_meta_datas_input(BaseModel):
@@ -91,9 +91,9 @@ class Section(BaseModel):
     title: str
     description: str
     subsections: List[Subsection]
-    project: Optional[Project] = None
+    project: Optional[Project]
 
 class Course(BaseModel):
     title: str
-    introduction: Optional[str] = None
+    introduction: Optional[str]
     sections: List[Section]

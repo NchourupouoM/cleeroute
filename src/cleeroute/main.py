@@ -1,13 +1,14 @@
-from fastapi import FastAPI, HTTPException, Request, Depends, Query
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from src.cleeroute.crew import Course_structure_crew, Course_meta_datas_crew
 from src.cleeroute.models import CourseInput, Course_meta_datas_input
-from typing import List
-import time 
+import time
 import math
 
 from src.cleeroute.db.models import VideoSearch, VideoResponse, PaginatedVideoResponse
-from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string #search_similar_videos,
+from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string
+from src.cleeroute.langGraph.stream_endpoint import router
+from src.cleeroute.langGraph.meta_data_gen import router_metadata
 
 app = FastAPI()
 
@@ -74,6 +75,8 @@ MODEL_CONFIG = {
     "use_gpu": True,
     "use_fp16": True 
 }
+
+
 model = get_sentence_transformer_model(MODEL_CONFIG)
 
 @app.post("/search", response_model=PaginatedVideoResponse)
@@ -142,6 +145,14 @@ async def search_videos(
         print(f"An error occurred during video search: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error: " + str(e))
     
+@app.get("/", tags=["Root"])
+def read_root():
+    return {"message": "Welcome to the IA Course Generator API!"}
+
+
+app.include_router(router, prefix="/course", tags=["Course Generator"])
+app.include_router(router_metadata, prefix="/metadata", tags=["Metadata Generator"])
+    
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000, reload=True, )#workers=4)
+    uvicorn.run(app, host="127.0.0.1", port=8000, reload=True, )
