@@ -144,11 +144,6 @@ async def search_videos(
         traceback.print_exc()
         print(f"An error occurred during video search: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error: " + str(e))
-    
-@app.get("/", tags=["Root"])
-def read_root():
-    return {"message": "Welcome to the IA Course Generator API!"}
-
 
 app.include_router(router, prefix="/course", tags=["Course Generator"])
 app.include_router(router_metadata, prefix="/metadata", tags=["Metadata Generator"])
