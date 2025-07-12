@@ -1,4 +1,16 @@
 # English version of the prompts
+SUMMARY_PROMPT = [
+    ("system", "You are an expert in educational taxonomy. Your task is to extract the core metadata for a new course, including its title, knowledge domains, specific categories, and detailed topics. You must output a JSON object strictly adhering to the `Course_summary` schema."),
+    ("human", "Generate a concise course summary based on the following main request:\n\nMain Request: {prompt}\n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_summary` structure."),
+]
+
+# Le prompt pour les détails prendra toujours un summary_json pour la cohérence
+DETAILS_PROMPT = [
+    ("system", "You are an expert in instructional design. Your task is to elaborate on the learning goals and requirements for a course, use first language person. You must output a JSON object strictly adhering to the `Course_details` schema."),
+    ("human", "Elaborate on the course details based on the following main request and existing summary information:\n\nMain Request: {prompt}\n\nExisting Summary (use this for consistency): \n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_details` structure.for objectives, use first personnal language and Ensure the 'desired_level' field is one of 'Beginner', 'Intermediate', or 'Advanced'."),
+]
+
+
 PLANNER_PROMPT = """
     You are an expert instructional designer. Your task is to transform a raw user request into a clear and structured "course brief" that will guide the other AI agents.
     Analyze the following user request and synthesize it into a concise brief.
@@ -81,6 +93,491 @@ ASSEMBLER_PROMPT = """
 
     Your Task:
     Write an introductory paragraph (between 50 and 150 words) that introduces the course, its objectives, and what the learner will be able to do upon completion.
+"""
+
+CONTEXTE = """
+
+- Academic Subjects
+	- Mathematics
+	- Biology
+	- Chemistry
+	- Physics
+	- Astronomy
+	- Earth Sciences
+	- Environmental Science
+	- Literature
+	- History
+	- Philosophy
+	- Sociology
+	- Anthropology
+	- Economics
+	- Political Science
+	- Geography
+- Agriculture & Horticulture
+	- Farming Techniques
+	- Permaculture
+	- Landscaping
+	- Sustainable Agriculture
+	- Crop & Livestock Management
+	- Urban Farming
+- Arts & Crafts
+	- Drawing
+	- Painting
+	- Sculpture
+	- Pottery
+	- Knitting
+	- Sewing
+	- Jewelry Making
+	- Calligraphy
+	- DIY Projects
+	- Textile Arts
+	- Paper Crafts
+	- Scrapbooking
+- Business Operations
+	- Supply Chain Management
+	- Logistics
+	- Operations Management
+	- Quality Management
+	- Lean Six Sigma
+	- Franchising
+	- Business Process Management
+	- Business Analysis
+	- Environmental, Social & Governance (ESG)
+	- Operations Management
+	- Supply Chain Management
+- Career Development & Job Search
+	- Resume Building
+	- Interview Skills
+	- Networking
+	- Career Planning
+	- Personal Branding
+	- Job Transition
+	- LinkedIn Optimization
+- Cloud Computing
+	- AWS
+	- Azure
+	- Google Cloud Platform
+	- Cloud Certifications
+	- Cloud Security
+	- Cloud Migration
+	- Cloud Development
+- Communication Skills
+	- Public Speaking
+	- Interpersonal Communication
+	- Business Communication
+	- Conflict Resolution
+	- Negotiation
+	- Persuasion
+	- Active Listening
+- Cosmetology & Barbering
+	- Hair Styling
+	- Nail Care
+	- Skincare
+	- Makeup Artistry
+	- Esthetics
+	- Professional Licensing
+	- Hair Removal
+	- Salon Management
+- Creative Writing
+	- Fiction
+	- Non-Fiction
+	- Poetry
+	- Screenwriting
+	- Playwriting
+	- Copywriting
+	- Technical Writing
+	- Journalism
+	- Blogging
+- Culinary Arts
+	- Cooking Techniques
+	- Baking
+	- Pastry
+	- Mixology
+	- Food Science
+	- Restaurant Management
+	- Specific Cuisines
+	- Bartending
+	- Food Photography
+- Cybersecurity
+	- Network Security
+	- Ethical Hacking
+	- Digital Forensics
+	- Information Security Management
+	- Governance, Risk & Compliance (GRC)
+	- Incident Response
+	- Security Operations
+	- Penetration Testing
+	- Cybersecurity Certifications
+- Data Science
+	- Big Data
+	- Machine Learning
+	- Deep Learning
+	- Artificial Intelligence
+	- Business Intelligence
+	- Data Visualization
+	- Data Engineering
+	- Data Analytics
+	- Statistical Modeling
+	- Statistical Analysis
+	- Predictive Analytics
+	- Natural Language Processing
+	- Computer Vision
+- Design
+	- Graphic Design
+	- UI/UX Design
+	- Web Design
+	- Interior Design
+	- Fashion Design
+	- Product Design
+	- Industrial Design
+	- Motion Graphics
+	- Animation
+	- Game Design
+	- Architectural Design
+	- CAD/CAM
+	- Graphic Design & Illustration
+	- 3D & Animation
+	- Design Tools
+	- Mobile Design
+- Development
+	- Web Development
+	- Mobile App Development
+	- Game Development
+	- Software Engineering
+	- Programming Languages
+	- Database Design & Development
+	- DevOps
+	- Software Testing
+	- API Development
+	- Software Testing
+	- No Code/Low Code Development
+	- Vibecoding
+- E-commerce & Online Business
+	- Online Store Management
+	- Dropshipping
+	- Affiliate Marketing
+	- Digital Product Creation
+	- Business Automation
+	- Online Retail Strategy
+	- SEO for E-commerce
+- Finance & Accounting
+	- Accounting
+	- Accounting Software
+	- Corporate Finance
+	- Personal Finance
+	- Financial Modeling & Analysis
+	- Investing & Trading
+	- Fintech
+	- Blockchain in Finance
+- Education & Pedagogy
+	- Teaching Methods
+	- Curriculum Development
+	- Educational Psychology
+	- Special Education
+	- Online Course Creation
+	- Classroom Management
+- Emerging Technologies
+	- Blockchain
+	- Quantum Computing
+	- Internet of Things (IoT)
+	- Augmented Reality (AR)
+	- Virtual Reality (VR)
+	- Robotics
+	- Drones
+	- Nanotechnology
+	- Generative AI
+- Engineering
+	- Civil Engineering
+	- Mechanical Engineering
+	- Electrical Engineering
+	- Electronics Engineering
+	- Telecoms Engineering
+	- Industrial Engineering
+	- Petroleum Engineering
+	- Chemical Engineering
+	- Aerospace Engineering
+	- Biomedical Engineering
+	- Environmental Engineering
+	- Structural Engineering
+- Environmental Studies & Sustainability
+	- Ecology
+	- Conservation
+	- Renewable Energy
+	- Climate Change
+	- Sustainable Development
+	- Environmental Policy
+	- Waste Management
+- Fashion & Apparel
+	- Fashion Design
+	- Merchandising
+	- Styling
+	- Textile Science
+	- Apparel Production
+	- Costume Design
+	- Sustainable Fashion
+- Financial Literacy & Personal Finance
+	- Budgeting
+	- Investing
+	- Debt Management
+	- Retirement Planning
+	- Real Estate Investing
+	- Credit Management
+	- Insurance
+	- Estate Planning
+- Gaming & Esports
+	- Game Strategy
+	- Game Streaming
+	- Professional Gaming
+	- Esports Management
+- Geographic Information Systems (GIS)
+	- Spatial Analysis
+	- Cartography
+	- Remote Sensing
+	- Geodatabase Management
+	- Drone Mapping
+- Government & Public Administration
+	- Public Policy
+	- Urban Planning
+	- International Relations
+	- Law Enforcement
+	- Emergency Management
+	- Civil Service
+	- Non-Profit Management
+- Health & Wellness
+	- Physical Fitness
+	- Exercise Science
+	- Nutrition
+	- Dietetics
+	- Mental Health
+	- Stress Management
+	- Mindfulness
+	- Yoga
+	- Pilates
+	- First Aid
+	- Sleep Science
+- Healthcare Professions
+	- Nursing
+	- Allied Health
+	- Clinical Skills
+	- Public Health
+	- Medical Coding & Billing
+	- Healthcare Administration
+	- Pharmacy
+	- Dentistry
+	- Veterinary Medicine
+- Hobbies & Interests
+	- Photography
+	- Gardening
+	- Pet Care & Animal Training
+	- Travel & Culture
+	- Automotive Maintenance
+	- Home Improvement
+	- Genealogy
+	- Outdoor Skills
+	- Music Appreciation
+- Hospitality & Tourism
+	- Hotel Management
+	- Restaurant Management
+	- Event Planning
+	- Travel Planning
+	- Tour Guiding
+	- Spa & Wellness Management
+	- Cruise Line Operations
+- Human Resources & Workplace
+	- Employee Relations
+	- Compensation & Benefits
+	- HR Analytics
+	- Diversity & Inclusion
+	- Organizational Development
+	- Performance Management
+	- Workplace Safety
+	- Compliance
+	- Human Resources Fundamentals
+	- Talent Management
+- IT Operations
+	- Network Administration
+	- System Administration
+	- Cloud Operations
+	- IT Service Management (ITSM)
+	- IT Certifications
+	- Help Desk Support
+	- Cybersecurity Operations
+	- Disaster Recovery
+	- Hardware
+	- Operating Systems & Servers
+- Language Learning
+	- English Language Learning
+	- English Language Test Prep
+	- Specific languages
+	- Accent Reduction
+	- Language for Specific Purposes
+	- Linguistics
+- Law & Legal Studies
+	- Corporate Law
+	- Intellectual Property
+	- Family Law
+	- Criminal Law
+	- Environmental Law
+	- Paralegal Studies
+	- Legal Research
+	- Constitutional Law
+	- Real Estate Law
+	- Human Rights Law
+- Leadership & Management
+	- Team Leadership
+	- Strategic Planning
+	- Management
+	- Conflict Resolution
+	- Decision Making
+	- Coaching
+	- Emotional Intelligence for Leaders
+	- Project Leadership
+	- Communication
+- Marketing
+	- Digital Marketing
+	- Content Marketing
+	- Search Engine Optimization (SEO)
+	- Social Media Marketing
+	- Email Marketing
+	- Brand Management
+	- Product Marketing
+	- Market Research
+	- Paid Advertising
+	- Public Relations
+	- Growth Hacking
+	- Marketing Analytics & Automation
+	- Marketing Strategy
+- Media & Entertainment Production
+	- Video Production
+	- Film Making
+	- Audio Engineering
+	- Podcasting
+	- Broadcast Media
+	- Animation
+	- Special Effects
+	- Screenwriting
+	- Voice Acting
+	- Music Production
+- Office Productivity
+	- Google Workspace
+	- Communication Tools
+	- Data Entry
+	- Document Management
+	- Presentation Skills
+	- Collaboration
+	- Email & Productivity
+	- Presentations
+	- Spreadsheets
+	- Word Processing
+- Parenting & Family Life
+	- Child Development
+	- Positive Parenting
+	- Family Communication
+	- Special Needs Parenting
+	- Early Childhood Education
+	- Grandparenting
+- Personal Development
+	- Goal Setting
+	- Habit Formation
+	- Time Management
+	- Productivity
+	- Self-Awareness
+	- Motivation
+	- Confidence Building
+	- Resilience
+	- Learning How to Learn
+	- Mindfulness
+	- Stress Reduction
+	- Entrepreneurship
+- Performing Arts
+	- Music
+	- Dance
+	- Acting
+	- Theater Production
+	- Directing
+	- Choreography
+- Project & Product Management
+	- Agile & Scrum
+	- PMP Certification Prep
+	- Product Ownership
+	- Requirements Gathering
+	- Kanban
+	- Lean Product Development
+	- Project Management
+	- Project Management Tools
+- Psychology
+	- General Psychology
+	- Cognitive Psychology
+	- Social Psychology
+	- Developmental Psychology
+	- Counseling Psychology
+	- Clinical Psychology
+- Real Estate
+	- Sales
+	- Brokering
+	- Property Management
+	- Real Estate Investing
+	- Real Estate Law
+	- Commercial Real Estate
+	- Property Development
+- Regulatory Compliance
+	- Industry-specific regulations
+	- Data Privacy
+	- Anti-Money Laundering (AML)
+- Research Methods
+	- Qualitative Research
+	- Quantitative Research
+	- Mixed Methods
+	- Data Collection
+	- Statistical Analysis
+	- Survey Design
+	- Academic Writing
+	- Grant Writing
+- Sales
+	- Sales Techniques
+	- CRM Software
+	- Negotiation
+	- Lead Generation
+	- Account Management
+	- Cold Calling
+	- B2B Sales
+	- Retail Sales
+	- Customer Success & Customer Service
+- Skilled Trades
+	- Construction
+	- Plumbing
+	- Electrical
+	- Heating, Ventilation & Air Conditioning
+	- Welding
+	- Automotive Mechanics
+	- Carpentry
+	- Masonry
+	- Painting
+	- Locksmithing
+	- Heavy Equipment Operation
+- Sports & Recreation
+	- Coaching
+	- Sports Management
+	- Specific Sport Skills
+	- Fitness Training
+	- Recreation Management
+	- Kinesiology
+- Test Preparation
+	- Standardized Tests
+	- English Proficiency Tests
+- Veterinary & Animal Care
+	- Animal Behavior
+	- Pet First Aid
+	- Veterinary Assisting
+	- Animal Husbandry
+	- Wildlife Rehabilitation
+	- Grooming
+- Volunteering & Community Engagement
+	- Non-profit Operations
+	- Fundraising
+	- Volunteer Management
+
+
 """
 
 
