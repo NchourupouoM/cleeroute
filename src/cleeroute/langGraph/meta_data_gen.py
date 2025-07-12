@@ -191,7 +191,6 @@ async def generate_details_endpoint(request: SinglePromptRequest):
 # # --- Définitions (inchangées) ---
 # llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL"), google_api_key=os.getenv("GEMINI_API_KEY"))
 
-# # llm = ChatGroq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
 
 # class GraphState(TypedDict):
 #     initial_request: Course_meta_datas_input
