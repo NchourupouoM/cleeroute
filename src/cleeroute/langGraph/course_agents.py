@@ -2,10 +2,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List
 
 import src.cleeroute.langGraph.prompt_tamplate as prompts
-from src.cleeroute.models import Section, Project, Subsection
+from src.cleeroute.models import Project, Subsection
 import os
 
 from dotenv import load_dotenv

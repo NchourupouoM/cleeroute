@@ -153,8 +153,8 @@ async def search_videos(
         raise HTTPException(status_code=500, detail="Internal Server Error: " + str(e))
 
 app.include_router(router, prefix="/course", tags=["Course Generator"])
-app.include_router(router_metadata_1, prefix="/metadata", tags=["Metadata Generator"])
-app.include_router(router_metadata_2, prefix="/metadata", tags=["Metadata Generator"])
+app.include_router(router_metadata_1, prefix="/metadata", tags=["Frist Metadata Generator"])
+app.include_router(router_metadata_2, prefix="/metadata", tags=["Second Metadata Generator"])
 
     
 if __name__ == "__main__":
