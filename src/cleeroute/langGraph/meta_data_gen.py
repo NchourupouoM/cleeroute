@@ -108,6 +108,7 @@ async def generate_summary_endpoint(request: SinglePromptRequest):
         )
 
 
+
 @router_metadata_2.post("/second-generate", response_model=Course_details)
 async def generate_details_endpoint(request: SinglePromptRequest):
     """
