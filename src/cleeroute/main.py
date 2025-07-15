@@ -15,16 +15,16 @@ app = FastAPI()
 # Configurer les origines autorisées
 origins = [
     "http://localhost",
-    "http://localhost:3000", 
+    "http://localhost:3000",
+    "https://localhost:3000",
     "http://localhost:8000",
     "http://127.0.0.1",
     "http://127.0.0.1:3000",
     "https://cleeroute.pages.dev",
     "https://www.cleeroute.com",
     "https://cleeroute.com",
-    "http://localhost",
     "http://127.0.0.1",
-    "127.0.0.1:35084",
+    "http://127.0.0.1:35084",
     "http://127.0.0.1:5500", # Pour le développement local avec Live Server
     "http://localhost:5500", # Pour le développement local avec Live Server
 ]
