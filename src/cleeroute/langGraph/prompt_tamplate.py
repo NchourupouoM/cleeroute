@@ -10,93 +10,126 @@ DETAILS_PROMPT = [
     ("human", "Elaborate on the course details based on the following main request and existing summary information:\n\nMain Request: {prompt}\n\nExisting Summary (use this for consistency): \n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_details` structure.for objectives, use first personnal language and Ensure the 'desired_level' field is one of 'Beginner', 'Intermediate', or 'Advanced'."),
 ]
 
+COURSE_STRUCTURE_PROMPT = """
 
-PLANNER_PROMPT = """
-    You are an expert instructional designer. Your task is to transform a raw user request into a clear and structured "course brief" that will guide the other AI agents.
-    Analyze the following user request and synthesize it into a concise brief.
+# ROLE & GOAL
+You are an Expert Instructional Designer and a Learning Content Architect. Your mission is to transform a series of raw inputs from a learner into a logical, detailed, and perfectly formatted course structure. Your primary objectives are SPEED and ACCURACY. You must generate ONLY a single, valid JSON object that conforms to the specified schema, with no additional text or commentary before or after it.
 
-    **User Request:**
-    - Course Title: {title}
-    - Domains: {domains}
-    - Categories: {categories}
-    - Topics to cover: {topics}
-    - Learning Objectives: {objectives}
-    - Learner Expectations: {expectations}
-    - Prerequisites: {prerequisites}
-    - Desired Level: {desired_level}
+# CONTEXT
+The following information comes directly from a user who wishes to create a personalized learning path. The output you generate will be immediately parsed by an automated system (based on Python's Pydantic), which tolerates zero formatting errors. Any deviation from the JSON schema will cause the process to fail.
 
-    **Your Course Brief (to generate):**
-    Generate a single, detailed paragraph that will serve as a guide for the course creation. This brief must be actionable.
+# INPUT DATA
+You will receive the following data:
+- `title`: "{title}"
+- `domains`: {domains}
+- `categories`: {categories}
+- `topics`: {topics}
+- `objectives`: {objectives}
+- `expectations`: {expectations}
+- `prerequisites`: {prerequisites}
+- `desired_level`: "{desired_level}"
+
+# CORE TASK
+1.  **Rapid High-Level Analysis**: Quickly analyze the inputs to understand the learner's intent, level, and goals.
+2.  **Structure Design**: Based on this analysis, design a logical and progressive course structure. The learning path must go from fundamental concepts (based on `prerequisites`) to advanced skills (targeting the `desired_level`).
+3.  **Strict JSON Generation**: Generate a single JSON object representing the complete course structure. The JSON must be the ONLY thing in your response.
+
+# KEY INSTRUCTIONS & CONSTRAINTS
+1.  **Title (`title`)**: Reformulate the input `title` to be more professional, engaging, and precise.
+2.  **Introduction (`introduction`)**: Write an introduction (3-5 sentences) that concisely summarizes the course. It should mention the main `domains`, the learner's `objectives`, and the target `desired_level`.
+3.  **Sections (`sections`)**:
+    - Create a minimum of 10 sections to ensure comprehensive coverage. If the topic is highly complex, you may create more.
+    - Sections must follow a logical progression: from basics to complex topics. The first section might cover prerequisites or a general introduction. The final section should address advanced concepts related to the `desired_level`.
+    - Each section title (`section.title`) must be clear and action-oriented or concept-focused.
+    - Each section description (`section.description`) must explain in one sentence what the learner will discover and which `objective` it helps to achieve.
+4.  **Subsections (`subsections`)**:
+    - Each section MUST contain between 3 and 6 subsections.
+    - Subsections break down the section into smaller, digestible learning units.
+    - Each subsection title (`subsection.title`) must be highly specific.
+    - Each subsection description (`subsection.description`) should briefly explain the precise point that will be covered.
+5.  **Data Synthesis**: You must use ALL input data.
+    - `topics` and `categories` should guide the content of the sections/subsections.
+    - `objectives` and `expectations` must be reflected in the descriptions and the overall structure.
+6.  **EFFICIENCY**: Do not waste time. Be direct, factual, and structured. The goal is not literary prose but efficient information architecture.
 """
 
-RESEARCH_PROMPT = """
-    You are an online education market analyst. Based on your deep knowledge of the catalogs of platforms like Coursera, Udemy, freeCodeCamp, and Udacity, identify the best practices and most effective course structures for a course on the following topic.
+PROGECT_GENERATE_PROMPT = """
+# ROLE & GOAL
+You are an Epic Quest Architect and a pedagogical Game Master. Your specialty is transforming learning topics, which can sometimes be complex and dry, into captivating and memorable project-based games. Your mission is to transmute the information from a course section into a perfectly structured "Quest" for the learner (the "Hero") to complete. The output must be a single, immersive, and directly usable JSON object.
 
-    **Course Brief:**
-    {course_brief}
+# CONTEXT
+A "Hero" (the learner) has just completed a section of a larger course. They have acquired new knowledge and skills. To validate and solidify this learning, you will present them with a final project for this section in the form of a quest. Your response will be parsed by a system that tolerates zero JSON formatting errors.
 
-    **Your Task:**
-    List 3 to 5 guiding principles or "best practices" for structuring this course. For example:
-    - "Start with a quick win to motivate the learner."
-    - "Alternate between theory and practical exercises in each subsection."
-    - "Each section should conclude with a hands-on project that uses the concepts learned."
-    - "Use real-world analogies to explain abstract concepts."
+# QUEST INGREDIENTS (INPUTS)
+You will receive the following items to forge your quest:
+- `course_title`: "{course_title}" (The name of the epic saga this quest is part of).
+- `section_title`: "{section_title}" (The current chapter of the adventure).
+- `section_description`: "{section_description}" (The lore/context for this chapter).
+- `subsection_titles_concatenated`: "{subsection_titles_concatenated}" (The list of skills, spells, and tools the Hero has just added to their arsenal).
+
+# YOUR MISSION (TASK)
+1.  **Immersion**: Dive into the theme provided by the inputs. Understand the essence of what the Hero has learned.
+2.  **Gamified Synthesis**: Use the `subsection_titles` as the list of powers the Hero must now combine and use to overcome a challenge.
+3.  **Quest Design**: Invent a project scenario that forces the Hero to PRACTICALLY apply all the listed skills. The scenario must be consistent with the `course_title` and `section_title`.
+4.  **Forge the Quest Scroll (JSON)**: Fill out the JSON format below with the quest's content. Be creative with the wording but rigorous with the structure.
+
+# THE QUEST SCROLL (STRICT JSON OUTPUT SCHEMA)
+Your response must be ONLY a valid JSON object following this schema. No text outside the curly braces.
+
+  "title": "string",
+  "description": "string",
+  "objectives": ["string"],
+  "prerequisites": ["string"],
+  "steps": ["string"],
+  "deliverable": ["string"],
+  "evaluation_criteria": ["string"]
+
+# THE GAME MASTER'S RULES (DETAILED INSTRUCTIONS)
+The overall tone must be epic, engaging, and playful. Make extensive use of Markdown formatting (`**bold**`, `*italics*`, lists) inside the JSON strings for maximum readability.
+
+1.  **`title` (The Quest's Name)**:
+    - Create a catchy and thematic quest title. Example: "The Forge of Algorithms" or "The Sanctuary of Lost Data." It must be directly inspired by the `section_title`.
+
+2.  **`description` (The Mission Briefing)**:
+    - Write a narrative and immersive description (2-4 paragraphs).
+    - **Introduce the scenario**: Set the stage for the problem to be solved. "Hero, the lands of {course_title} are in peril! Only someone who has mastered the art of {section_title} can save us..."
+    - **Explain the stakes**: Describe why this quest is important.
+    - **Use Markdown** to highlight key terms.
+
+3.  **`objectives` (The Victory Conditions)**:
+    - List 3 to 5 clear and measurable objectives.
+    - Frame them as feats to be accomplished. Example: "Forge a script capable of sorting 10,000 scrolls in under a second." or "Erect a web interface that responds to the user's incantations."
+
+4.  **`prerequisites` (Required Gear)**:
+    - List the knowledge or tools the Hero is *expected to already possess* to begin the quest.
+    - Base this on the `section_description` and common sense.
+    - Frame them as an inventory. Example: "A knowledge of the basic Python arcana." or "The `requests` grimoire, installed and ready for use."
+
+5.  **`steps` (The Adventure Walkthrough)**:
+    - This is the most important part. Break down the project into logical and exhaustive steps (minimum 5 steps).
+    - **Each step is a string in the list.**
+    - **Use a Markdown numbered list inside a string if a step has sub-tasks.**
+    - Write each step as a Game Master's instruction. "1. **The Dawn of Preparation**: First, you must draft the blueprint for your data fortress. Create a `main.py` file and import the necessary scrolls..." "2. **The Summoning of Data**: Use your new API skills to summon the data from..."
+    - Ensure the steps force the use of the skills listed in `subsection_titles_concatenated`.
+
+6.  **`deliverable` (The Proof of Triumph)**:
+    - List precisely what the Hero must submit to prove their victory.
+    - Be very specific. Example: "A link to your Git repository containing the complete source code." or "A PDF document, max 5 pages, detailing your architecture and choices."
+
+7.  **`evaluation_criteria` (The Judgment Criteria)**:
+    - Define how the quest will be judged. This is the Game Master's rubric.
+    - List 3 to 5 clear criteria. 
+
+# GOLDEN RULE
+YOUR OUTPUT IS **ONLY** THE JSON. NO words before or after. The Hero's fate depends on it!
 """
 
-OUTLINE_AGENT_PROMPT = """
-    You are a meticulous curriculum architect. Your task is to create a high-level course outline based on the provided brief and guiding principles.
-    You MUST generate a list of main sections. For EACH section, you MUST provide a meaningful `title` and a concise `description` (1-2 sentences) of its content. Do not leave any fields empty.
 
-    **Course Brief:**
-    {course_brief}
 
-    **Guiding Research Principles:**
-    {research_notes}
 
-    **Expected Output Format:**
-    You must generate a SINGLE JSON object that validates against the following schema. The `sections` array must not contain empty objects. Each object in the array MUST have a `title` and a `description`.
-"""
 
-DETAILING_AGENT_PROMPT = """
-    You are an educational content creator. Your task is to detail ONE SINGLE section of a course.
-    Starting from the section's title and description, generate a list of relevant subsections and a practical end-of-section project.
-
-    General Course Brief:
-    {course_brief}
-
-    Section to Detail:
-
-    Title: {section_title}
-
-    Description: {section_description}
-
-    Your Task:
-    Generate the detailed content for this section.
-
-    Subsections: Create a list of logical subsections. For each, provide a title and a brief description.
-
-    Project: Design a practical project that allows the learner to apply the skills from the section. The project must have a title, description, objectives, prerequisites (what must be mastered in the section), steps for completion, the expected deliverable, and evaluation criteria.
-
-    Expected output format:
-    You must generate a JSON object.
-"""
-
-ASSEMBLER_PROMPT = """
-    You are an editor-in-chief for an e-learning platform. The course skeleton is complete.
-    Your sole task is to write an engaging and concise introduction for the course, based on its title and the list of its sections.
-
-    Course Title:
-    {course_title}
-
-    Course Sections:
-    {sections_summary}
-
-    Your Task:
-    Write an introductory paragraph (between 50 and 150 words) that introduces the course, its objectives, and what the learner will be able to do upon completion.
-"""
 
 CONTEXTE = """
-
 - Academic Subjects
 	- Mathematics
 	- Biology

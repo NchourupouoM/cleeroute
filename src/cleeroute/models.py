@@ -91,7 +91,6 @@ class Section(BaseModel):
     title: str
     description: str
     subsections: List[Subsection]
-    project: Optional[Project] = None
 
 class Course(BaseModel):
     title: str
