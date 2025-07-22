@@ -1,52 +1,42 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, List, Optional
-from fastapi import APIRouter, FastAPI 
+from typing import TypedDict
+from fastapi import APIRouter
 import os
 from dotenv import load_dotenv
-
-# Importer les modèles mis à jour
-from src.cleeroute.langGraph.models import (
-    CourseInput,
-    CourseOutline,
-    SubsectionGenerationInput,
-    Subsection,
+from src.cleeroute.models import (
+    Course,
+    CourseInput
 )
 
-# Importer le prompt unifié
-from src.cleeroute.langGraph.streaming_course_structure.prompts_course import (
-    PROMPT_GENERATE_SECTION, # Utilisez le nouveau prompt
-    PROMPT_GENERATE_SUBSECTIONS
-)
-
+from src.cleeroute.langGraph.prompt_tamplate import COURSE_STRUCTURE_PROMPT
 load_dotenv()
 
-# Configuration LLM
-llm_gemini = ChatGoogleGenerativeAI( # Renommé pour plus de clarté
-    model=os.getenv("MODEL_2"), 
+llm = ChatGoogleGenerativeAI(
+    model=os.getenv("MODEL_2"),
     google_api_key=os.getenv("GEMINI_API_KEY"),
-    temperature=0.2, # Un peu plus de créativité pour les descriptions
 )
 
-# --- API 1: Génération de l'esquisse du cours (Header + Sections Skeletons) ---
-class CourseOutlineGraphState(TypedDict):
-    metadata: CourseInput
-    course_outline: Optional[CourseOutline]
+# stateGraphe
+class GraphState(TypedDict):
+    metatadata: CourseInput
+    course: Course
 
+def Course_structurer_agent():
+    structure_llm = llm.with_structured_output(Course)
+    prompt = ChatPromptTemplate.from_template(COURSE_STRUCTURE_PROMPT)
+    return prompt | structure_llm
 
-# Node unique: Générer l'esquisse complète du cours
-def generate_course_outline_node(state: CourseOutlineGraphState) -> CourseOutlineGraphState:
+# node 
+def Couse_structure_node(state: GraphState) -> GraphState:
+    """ 
+    This node generates a course structure based on the provided metadata.
     """
-    Génère le titre, l'introduction et la liste des sections principales du cours en une seule étape.
-    """
-    metadata = state["metadata"]
-    
-    # La chaîne combinée
-    # Utilise le prompt unifié et le modèle CourseOutline comme sortie structurée
-    combined_chain = ChatPromptTemplate.from_template(PROMPT_GENERATE_SECTION) | llm_gemini.with_structured_output(CourseOutline)
-    
-    response: CourseOutline = combined_chain.invoke({
+    agent = Course_structurer_agent()
+    metadata = state["metatadata"]
+    response = agent.invoke({
         "title": metadata.title,
         "domains": metadata.domains,
         "categories": metadata.categories,
@@ -57,65 +47,31 @@ def generate_course_outline_node(state: CourseOutlineGraphState) -> CourseOutlin
         "desired_level": metadata.desired_level
     })
     
-    # Pour le débogage, imprimez la sortie du LLM    
-    return {"course_outline": response}
+    course = Course.model_validate(response)
+    return {"course": course}
 
-
-def get_course_outline_graph():
+def get_course_structure_graph():
     """
-    Crée un graphe d'état pour générer l'esquisse complète du cours.
+    This function creates a state graph for generating course structures.
     """
-    workflow = StateGraph(CourseOutlineGraphState)
-    # Un seul nœud suffit maintenant
-    workflow.add_node("generate_outline", generate_course_outline_node)
-    
-    workflow.set_entry_point("generate_outline")
-    workflow.add_edge("generate_outline", END) # Le nœud mène directement à la fin
-    
+    workflow = StateGraph(GraphState)
+    workflow.add_node( "course_structure",Couse_structure_node)
+    workflow.set_entry_point("course_structure")
+    workflow.add_edge("course_structure", END)
     return workflow.compile()
 
-# API Router pour la première API
-course_sections_router = APIRouter() # Renommé pour correspondre à la fonction de sortie
+# API Router
+course_structure_router = APIRouter()
 
-@course_sections_router.post("/generate_course_sections", response_model=CourseOutline)
-async def get_course_outline(metadata: CourseInput):
+@course_structure_router.post("/course_structure")
+async def course_structure(metadata: CourseInput):
     """
-    Endpoint pour générer l'esquisse complète du cours (en-tête et sections principales).
+    Endpoint to generate a course structure based on the provided metadata.
     """
-    graph = get_course_outline_graph()
+    graph = get_course_structure_graph()
     result = graph.invoke({
-        "metadata": metadata,
-        "course_outline": None # Initialiser l'état avec None pour la sortie
+        "metatadata": metadata,
+        "course": None
     })
     
-    # Le résultat contient directement l'objet CourseOutline
-    return result["course_outline"]
-
-
-# --- API 2: Génération des sous-sections pour une section donnée (inchangée) ---
-
-# Chaîne pour générer les sous-sections
-def generate_subsections_chain():
-    prompt = ChatPromptTemplate.from_template(PROMPT_GENERATE_SUBSECTIONS)
-    return prompt | llm_gemini.with_structured_output(List[Subsection]) # Utilisation de llm_gemini pour la cohérence
-
-# API Router pour la deuxième API
-course_subsections_router = APIRouter()
-
-@course_subsections_router.post("/generate_subsections_for_section", response_model=List[Subsection])
-async def generate_subsections_for_section(input_data: SubsectionGenerationInput):
-    """
-    Endpoint pour générer les sous-sections d'une section spécifique du cours.
-    Nécessite le contexte du cours et les détails de la section.
-    """
-    print("--- Génération des sous-sections pour une section ---")
-    sub_chain = generate_subsections_chain()
-    
-    response: List[Subsection] = sub_chain.invoke({
-        "course_title": input_data.course_title,
-        "course_objectives": input_data.course_objectives,
-        "section_title": input_data.section_title,
-        "section_description": input_data.section_description
-    })
-    
-    return response
+    return result["course"]

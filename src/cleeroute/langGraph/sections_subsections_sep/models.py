@@ -1,28 +1,8 @@
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
 
-class Course_meta_datas_input(BaseModel):
-    response: str
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "response":"I want to speak english like a native"
-            }
-        }
-
-class Course_meta_datas(BaseModel):
-    title: str 
-    domains: List[str] 
-    categories: List[str] 
-    topics: List[str]
-    objectives: List[str]
-    expectations: List[str]
-    prerequisites: List[str]
-    desired_level: str
-
-class CourseInput(Course_meta_datas):
-    
+# --- Modèles d'entrée pour la génération de course_outline ---
+class CourseInput(BaseModel):
     class Config:
         json_schema_extra = {
             "examples": [
@@ -72,61 +52,51 @@ class CourseInput(Course_meta_datas):
             }
         ]
     }
-
-class Project(BaseModel):
-    title: str
-    description: str
-    objectives: List[str]
-    prerequisites: List[str]
-    Steps: List[str]
-    Deliverable: List[str]
-    evaluation_criteria: Optional[List[str]] = None
-
-class Subsection(BaseModel):
-    title: str
-    description: str
+    title: str = Field(description="The concise and descriptive title of the course or project.")
+    domains: List[str] = Field(description="A list of primary knowledge domains or fields this course belongs to.")
+    categories: List[str] = Field(description="A list of more specific categories or sub-fields within the domains.")
+    topics: List[str] = Field(description="A comprehensive list of specific keywords, concepts, or modules that will be covered.")
+    objectives: List[str] = Field(description="A list of clear, measurable learning objectives.")
+    expectations: List[str] = Field(description="A list of what is expected from the participants during the course.")
+    prerequisites: List[str] = Field(description="A list of essential prior knowledge, skills, or tools.")
+    desired_level: str = Field(description="The target proficiency level for the audience (e.g., 'Beginner', 'Intermediate', 'Advanced')")
 
 class Section(BaseModel):
-    title: str
-    description: str
-    subsections: List[Subsection]
-
-class Course(BaseModel):
-    title: str
-    introduction: Optional[str] = None
-    sections: List[Section]
-
-
-# ==========================================================================
-
-class CourseHeader(BaseModel):
-    title: str = Field(description="A professional and reformulated course title.")
-    introduction: str = Field(description="A 3-5 sentence introduction that presents the course, its objectives, and the target level.")
-
-class SectionSkeleton(BaseModel):
     title: str = Field(description="The title of the main section.")
     description: str = Field(description="A brief description of what this section covers.")
 
-
-class CourseOutline(BaseModel):
+# Ce modèle est la CIBLE de notre sortie structurée combinée !
+class Course_section(BaseModel):
     """
     Represents the high-level structure of a course, including header and main sections without subsections.
     """
-    header: CourseHeader
-    sections: List[SectionSkeleton]
+    title: str 
+    introduction: str
+    sections: List[Section]
 
 
 # --- Modèles d'entrée et de sortie pour la deuxième API (Subsection Generation) ---
 class SubsectionGenerationInput(BaseModel):
-    course_title: str = Field(description="The overall title of the course.", default="")
-    course_introduction: str = Field(description="A brief introduction to the course.", default="")
-    section_title: str = Field(description="The title of the specific section for which subsections are to be generated.", default="")
-    section_description: str = Field(description="The description of the specific section.", default="")
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "course_title": "Achieving Native-Like English Fluency",
+                    "course_introduction": "Welcome to Native English Fluency: Advanced Immersion. This course is designed for advanced learners seeking to master native-like pronunciation, intonation, and idiomatic expressions. Through targeted practice and in-depth analysis, you will refine your speaking skills, expand your vocabulary, and gain the confidence to engage in spontaneous conversations. By the end of this course, you'll be able to communicate fluently and naturally across a wide range of topics.",
+                    "section_title": "Mastering English Phonetics: A Comprehensive Guide",
+                    "section_description": "An overview of English phonetics, focusing on sounds that are often mispronounced by non-native speakers. Includes an introduction to the International Phonetic Alphabet (IPA)"
+                }
+            ]
+        }
+    
+    course_title: str = Field(description="The overall title of the course.")
+    course_introduction: str = Field(description="The main course introduction of the overall course.")
+    section_title: str = Field(description="The title of the specific section for which subsections are to be generated.")
+    section_description: str = Field(description="The description of the specific section.")
 
 class Subsection(BaseModel):
     title: str = Field(description="The title of the subsection.")
     description: str = Field(description="A description of what the learner will learn in this subsection.")
 
-# La deuxième API retournera directement une liste de Subsection
-class SubsectionsOutput(BaseModel):
+class SubsectionOutput(BaseModel):
     subsections: List[Subsection]
