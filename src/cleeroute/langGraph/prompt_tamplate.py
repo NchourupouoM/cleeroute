@@ -38,7 +38,7 @@ You will receive the following data:
 1.  **Title (`title`)**: Reformulate the input `title` to be more professional, engaging, and precise.
 2.  **Introduction (`introduction`)**: Write an introduction (3-5 sentences) that concisely summarizes the course. It should mention the main `domains`, the learner's `objectives`, and the target `desired_level`.
 3.  **Sections (`sections`)**:
-    - Create a minimum of 10 sections to ensure comprehensive coverage. If the topic is highly complex, you may create more.
+    - Create only 5 sections per course to ensure comprehensive coverage.
     - Sections must follow a logical progression: from basics to complex topics. The first section might cover prerequisites or a general introduction. The final section should address advanced concepts related to the `desired_level`.
     - Each section title (`section.title`) must be clear and action-oriented or concept-focused.
     - Each section description (`section.description`) must explain in one sentence what the learner will discover and which `objective` it helps to achieve.

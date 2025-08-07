@@ -17,7 +17,7 @@ Your task is to create the complete high-level outline for a course, including a
 Generate a single JSON object that contains:
 1.  A professional, reformulated course title.
 2.  A concise and engaging 3-5 sentence introduction that presents the course, its objectives, and the target level.
-3.  A list of at least 10 logical main sections, progressing from basic to advanced levels. Each section must have ONLY a title and a description. DO NOT generate subsections at this stage.
+3.  A list of 5 logical main sections, progressing from basic to advanced levels. Each section must have ONLY a title and a description. DO NOT generate subsections at this stage.
 
 The JSON must be the ONLY thing in your response.
 
@@ -34,13 +34,14 @@ The JSON must be the ONLY thing in your response.
       "title": "Section 2 Title (e.g., Core Principles)",
       "description": "A brief description of section 2's content, building on previous concepts."
     }},
-    // Add more examples if you think it helps the LLM
     {{
       "title": "Section N Title",
       "description": "A brief description of section N."
     }}
   ]
 }}
+
+NB: only 5 engaging sections.
 """
 
 # Le PROMPT_GENERATE_SUBSECTIONS reste inchangé
@@ -58,7 +59,7 @@ Based on the overall course context and the details of a single section, generat
 - Section Description: "{section_description}"
 
 # TASK
-Generate a list of 3 to 6 logical and detailed subsections for the provided section. Each subsection must have a title and a description.
+Generate only 3 logical and detailed subsections for the provided section. Each subsection must have a title and a description.
 The JSON must be the ONLY thing in your response.
 
 # STRICT JSON FORMAT
@@ -74,4 +75,5 @@ The JSON must be the ONLY thing in your response.
     }}
   ]
 }}
+NB: only 3 engaging subsections.
 """
