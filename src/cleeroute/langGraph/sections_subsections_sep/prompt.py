@@ -52,7 +52,7 @@ Based on the overall course context and the details of a single section, generat
 # OVERALL COURSE CONTEXT
 - Course Title: "{course_title}"
 - Course introduction: {course_introduction}
-
+ 
 # SECTION TO DETAIL
 - Section Title: "{section_title}"
 - Section Description: "{section_description}"
