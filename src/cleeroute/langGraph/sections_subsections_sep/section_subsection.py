@@ -1,13 +1,14 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-# from langchain_groq import ChatGroq # Supprimez si non utilisé
+# from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 from typing import TypedDict
-from fastapi import APIRouter# Assurez-vous d'importer FastAPI pour l'instance principale
+from fastapi import APIRouter, Header, HTTPException
+from typing import Optional
 import os
 from dotenv import load_dotenv
 
-# Importer les modèles mis à jour
+# Importations des modeles
 from src.cleeroute.langGraph.sections_subsections_sep.models import ( # Assurez-vous que le chemin est correct
     CourseInput, 
     SubsectionOutput,
@@ -15,7 +16,7 @@ from src.cleeroute.langGraph.sections_subsections_sep.models import ( # Assurez-
     SubsectionGenerationInput,
 )
 
-# Importer le prompt unifié
+# Importations des prompts
 from src.cleeroute.langGraph.sections_subsections_sep.prompt import (
     PROMPT_GENERATE_COURSE_OUTLINE, 
     PROMPT_GENERATE_SUBSECTIONS
@@ -23,31 +24,37 @@ from src.cleeroute.langGraph.sections_subsections_sep.prompt import (
 
 load_dotenv()
 
-# Configuration LLM
-llm_gemini = ChatGoogleGenerativeAI( # Renommé pour plus de clarté
-    model=os.getenv("MODEL_2", "gemini-2.5-pro"), # Utilisez un modèle robuste pour la génération de structure
-    google_api_key=os.getenv("GEMINI_API_KEY"),
-    temperature=0.2, # Un peu plus de créativité pour les descriptions
-)
+# Configuration LLM globall
+# llm_gemini = ChatGoogleGenerativeAI( # Renommé pour plus de clarté
+#     model=os.getenv("MODEL_2", "gemini-2.5-pro"), # Utilisez un modèle robuste pour la génération de structure
+#     google_api_key=os.getenv("GEMINI_API_KEY"),
+#     temperature=0.2, # Un peu plus de créativité pour les descriptions
+# )
 
-# --- API 1: Génération de l'esquisse du cours (Header + Sections Skeletons) ---
+# =============================== API 1: Génération de l'esquisse du cours (Header + Sections Skeletons) ================
 
-# Graph State pour la première API (simplifié, car un seul nœud renvoie CourseOutline directement)
+# Graph State pour la première API.
 class CourseOutlineGraphState(TypedDict):
     metadata: CourseInput
     course_section: Course_section
 
 
 # Node unique: Générer l'esquisse complète du cours
-def generate_course_outline_node(state: CourseOutlineGraphState) -> CourseOutlineGraphState:
+# The LLM in param is just for developpement purposes
+def generate_course_outline_node(
+        state: CourseOutlineGraphState, 
+        llm_instance: ChatGoogleGenerativeAI
+    ) -> CourseOutlineGraphState:
     """
-    Node to generate the complete course outline including title, introduction, and main sections."""
-    print("--- Génération de l'esquisse complète du cours ---")
+    Node to generate the complete course outline including title, introduction, and main sections.
+    
+    """
+
     metadata = state["metadata"]
     
     # La chaîne combinée
     # Utilise le prompt unifié et le modèle CourseOutline comme sortie structurée
-    combined_chain = ChatPromptTemplate.from_template(PROMPT_GENERATE_COURSE_OUTLINE) | llm_gemini.with_structured_output(Course_section)
+    combined_chain = ChatPromptTemplate.from_template(PROMPT_GENERATE_COURSE_OUTLINE) | llm_instance.with_structured_output(Course_section)
     
     response: Course_section = combined_chain.invoke({
         "title": metadata.title,
@@ -62,14 +69,14 @@ def generate_course_outline_node(state: CourseOutlineGraphState) -> CourseOutlin
     
     return {"course_section": response}
 
-
-def get_course_outline_graph():
+# The LLM in param is just for production purposes
+def get_course_outline_graph(llm_instance: ChatGoogleGenerativeAI):
     """
     Create and return the graph for generating the course outline.
     """
     workflow = StateGraph(CourseOutlineGraphState)
     # Un seul nœud suffit maintenant
-    workflow.add_node("generate_outline", generate_course_outline_node)
+    workflow.add_node("generate_outline", lambda state: generate_course_outline_node(state, llm_instance = llm_instance))
     
     workflow.set_entry_point("generate_outline")
     workflow.add_edge("generate_outline", END) # Le nœud mène directement à la fin
@@ -80,11 +87,24 @@ def get_course_outline_graph():
 course_outline_router = APIRouter() # Renommé pour correspondre à la fonction de sortie
 
 @course_outline_router.post("/course_outline", response_model=Course_section)
-async def get_course_outline(metadata: CourseInput):
+async def get_course_outline(
+    metadata: CourseInput,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-Gemini-Api-Key")    
+):
     """
     Endpoint for generating the course outline, including title, introduction, and main sections.
     """
-    graph = get_course_outline_graph()
+    api_key_to_use = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
+    if not api_key_to_use:
+        raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
+    
+    llm_to_use = ChatGoogleGenerativeAI(
+        model=os.getenv("MODEL_2", "gemini-2.5-flash"), # Utilisez un modèle robuste pour la génération de structure
+        google_api_key=api_key_to_use,
+    )
+    
+    graph = get_course_outline_graph(llm_instance = llm_to_use)
     result = graph.invoke({
         "metadata": metadata,
         "course_section": None # Initialiser l'état avec None pour la sortie
@@ -97,19 +117,32 @@ async def get_course_outline(metadata: CourseInput):
 # --- API 2: Génération des sous-sections pour une section donnée (inchangée) ---
 
 # Chaîne pour générer les sous-sections
-def generate_subsections_chain():
+def generate_subsections_chain(llm_instance: ChatGoogleGenerativeAI = None):
     prompt = ChatPromptTemplate.from_template(PROMPT_GENERATE_SUBSECTIONS)
-    return prompt | llm_gemini.with_structured_output(SubsectionOutput) # Utilisation de llm_gemini pour la cohérence
+    return prompt | llm_instance.with_structured_output(SubsectionOutput) # Utilisation de llm_gemini pour la cohérence
 
 # API Router pour la deuxième API
 course_subsections_router = APIRouter()
 
 @course_subsections_router.post("/generate_subsections", response_model=SubsectionOutput)
-async def generate_subsections_for_section(input_data: SubsectionGenerationInput):
+async def generate_subsections_for_section(
+    input_data: SubsectionGenerationInput,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-Gemini-Api-Key")
+):
     """
     Endpoint for generating subsections for a specific section.
     """
-    sub_chain = generate_subsections_chain()
+    api_key_to_use = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
+    if not api_key_to_use:
+        raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
+    
+    llm_to_use = ChatGoogleGenerativeAI(
+        model=os.getenv("MODEL_2", "gemini-2.5-flash"),
+        google_api_key=api_key_to_use,
+    )
+
+    sub_chain = generate_subsections_chain(llm_instance=llm_to_use)
     
     response: SubsectionOutput = sub_chain.invoke({
         "course_title": input_data.course_title,

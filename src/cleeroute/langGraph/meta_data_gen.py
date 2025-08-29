@@ -2,7 +2,7 @@ import os
 from typing import List,AsyncIterator, Optional
 import time
 
-from fastapi import HTTPException, Query, FastAPI, status
+from fastapi import HTTPException, Query, FastAPI, status, Header
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 from fastapi import APIRouter
@@ -40,24 +40,25 @@ class Course_details(BaseModel):
 
 
 # Initialisation de l'LLM
-google_api_key = os.getenv("GEMINI_API_KEY")
-if not google_api_key:
-    raise ValueError("GEMINI_API_KEY environment variable is not set. Please set it to your Google API key.")
+# google_api_key = os.getenv("GEMINI_API_KEY")
+# if not google_api_key:
+#     raise ValueError("GEMINI_API_KEY environment variable is not set. Please set it to your Google API key.")
 
-llm = ChatGoogleGenerativeAI(
-    model= os.getenv("MODEL_2"),
-    temperature=0.1,
-    google_api_key=google_api_key,
-)
+# llm = ChatGoogleGenerativeAI(
+#     model= os.getenv("MODEL_2"),
+#     temperature=0.1,
+#     google_api_key=google_api_key,
+# )
 
 
 # Chaîne LangChain pour la génération du résumé
-summary_prompt_template = ChatPromptTemplate.from_messages(SUMMARY_PROMPT)
-summary_llm_chain = summary_prompt_template | llm.with_structured_output(Course_summary)
+def get_summary_llm_chain(llm_instance: ChatGoogleGenerativeAI):
+    summary_prompt_template = ChatPromptTemplate.from_messages(SUMMARY_PROMPT)
+    return summary_prompt_template | llm_instance.with_structured_output(Course_summary)
 
-# Chaîne LangChain pour la génération des détails
-details_prompt_template = ChatPromptTemplate.from_messages(DETAILS_PROMPT)
-details_llm_chain = details_prompt_template | llm.with_structured_output(Course_details)
+def get_details_llm_chain(llm_instance: ChatGoogleGenerativeAI):
+    details_prompt_template = ChatPromptTemplate.from_messages(DETAILS_PROMPT)
+    return details_prompt_template | llm_instance.with_structured_output(Course_details)
 
 
 # --- DÉFINITION DE L'APPLICATION FASTAPI ---
@@ -78,13 +79,30 @@ class SinglePromptRequest(BaseModel):
 contexte_data = CONTEXTE
 
 @router_metadata_1.post("/first-generate", response_model=Course_summary, summary="Generate Course Summary")
-async def generate_summary_endpoint(request: SinglePromptRequest):
+async def generate_summary_endpoint(
+    request: SinglePromptRequest,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-Gemini-Api-Key")
+):
     """
     This endpoint generates the first part of meta data course based on a user prompt.
+
+    Allows user to provide their own Gemini API key for developpement purpose.
     """
     print(f"[{time.time():.2f}] Requête reçue pour /generate-summary: prompt='{request.user_prompt}'")
+
+    api_key_to_use = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
+    if not api_key_to_use:
+        raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
     
+    llm_to_use = ChatGoogleGenerativeAI(
+        model=os.getenv("MODEL_2", "gemini-2.5-flash"),
+        google_api_key=api_key_to_use,
+    )
+
+    summary_llm_chain = get_summary_llm_chain(llm_instance=llm_to_use)
     start_time = time.perf_counter()
+
     try:
         # Utilise le contexte global par défaut, car 'additional_context' n'est plus une entrée.
         context_for_llm = contexte_data 
@@ -110,40 +128,26 @@ async def generate_summary_endpoint(request: SinglePromptRequest):
 
 
 @router_metadata_2.post("/second-generate", response_model=Course_details)
-async def generate_details_endpoint(request: SinglePromptRequest):
+async def generate_details_endpoint(
+    request: SinglePromptRequest,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-Gemini-Api-Key")
+):
     """
     This endpoint generates the second part of meta data course based on a user prompt.
-
     """
     print(f"[{time.time():.2f}] Requête reçue pour /generate-details: prompt='{request.user_prompt}'")
 
-    # --- ÉTAPE INTERNE: RE-GÉNÉRATION DU RÉSUMÉ POUR COHÉRENCE ---
-    print(f"[{time.time():.2f}] [Interne] Re-génération du résumé pour les détails...")
-    internal_summary_start_time = time.perf_counter()
-    summary_proposal: Optional[Course_summary] = None
-    try:
-        # Utilise le contexte global par défaut
-        context_for_llm = contexte_data
-        summary_proposal = summary_llm_chain.invoke({
-            "prompt": request.user_prompt,
-            "context": context_for_llm
-        })
-        internal_summary_end_time = time.perf_counter()
-        internal_summary_gen_time = internal_summary_end_time - internal_summary_start_time
-        print(f"[{time.time():.2f}] [Interne] Résumé re-généré en {internal_summary_gen_time:.2f} secondes.")
-    except Exception as e:
-        print(f"[{time.time():.2f}] [Interne] Erreur lors de la re-génération du résumé: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to internally re-generate summary for details: {str(e)}"
-        )
+    api_key_to_use = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
+    if not api_key_to_use:
+        raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
     
-    if not summary_proposal:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal summary generation failed."
-        )
-    # --- FIN ÉTAPE INTERNE ---
+    llm_to_use = ChatGoogleGenerativeAI(
+        model=os.getenv("MODEL_2", "gemini-2.5-flash"),
+        google_api_key=api_key_to_use,
+    )
+
+    details_llm_chain = get_details_llm_chain(llm_instance=llm_to_use)
 
     start_time = time.perf_counter() # Temps pour la génération des détails elle-même
     try:        

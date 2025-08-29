@@ -96,3 +96,13 @@ class Course(BaseModel):
     title: str
     introduction: Optional[str] = None
     sections: List[Section]
+
+# complete course structure for the humain in the loop action
+
+class SectionWtihProject(Section):
+    project: Project
+
+class CompleteCourse(BaseModel):
+    title: str
+    introduction: Optional[str] = None
+    sections: List[SectionWtihProject]
