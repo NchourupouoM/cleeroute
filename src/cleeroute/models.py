@@ -1,6 +1,7 @@
-from typing import List, Optional
-from pydantic import BaseModel
-
+from typing import List, Optional, Literal
+from pydantic import BaseModel, Field
+from src.cleeroute.langGraph.sections_subsections_sep.models import SubsectionGenerationInput, SubsectionOutput
+from src.cleeroute.langGraph.project_generator import RequiredGenProjInput
 class Course_meta_datas_input(BaseModel):
     response: str
 

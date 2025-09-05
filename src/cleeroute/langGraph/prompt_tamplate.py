@@ -1,10 +1,9 @@
-# English version of the prompts
+# ==================================== Prompts for Meta data of a course =====================================
 SUMMARY_PROMPT = [
     ("system", "You are an expert in educational taxonomy. Your task is to extract the core metadata for a new course, including its title, knowledge domains, specific categories, and detailed topics. You must output a JSON object strictly adhering to the `Course_summary` schema."),
     ("human", "Generate a concise course summary based on the following main request:\n\nMain Request: {prompt}\n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_summary` structure."),
 ]
 
-# Le prompt pour les détails prendra toujours un summary_json pour la cohérence
 DETAILS_PROMPT = [
     ("system", "You are an expert in instructional design. Your task is to elaborate on the learning goals and requirements for a course, use first language person. You must output a JSON object strictly adhering to the `Course_details` schema."),
     ("human", "Elaborate on the course details based on the following main request and existing summary information:\n\nMain Request: {prompt}\n\nExisting Summary (use this for consistency): \n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_details` structure.for objectives, use first personnal language and Ensure the 'desired_level' field is one of 'Beginner', 'Intermediate', or 'Advanced'."),

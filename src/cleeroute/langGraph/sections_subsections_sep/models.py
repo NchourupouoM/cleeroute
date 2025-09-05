@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 # --- Modèles d'entrée pour la génération de course_outline ---
@@ -88,7 +88,7 @@ class SubsectionGenerationInput(BaseModel):
                 }
             ]
         }
-    
+    mode: Literal["generate", "update"] = "generate"
     course_title: str = Field(description="The overall title of the course.")
     course_introduction: str = Field(description="The main course introduction of the overall course.")
     section_title: str = Field(description="The title of the specific section for which subsections are to be generated.")
@@ -99,4 +99,4 @@ class Subsection(BaseModel):
     description: str = Field(description="A description of what the learner will learn in this subsection.")
 
 class SubsectionOutput(BaseModel):
-    subsections: List[Subsection]
+    subsections: Optional[List[Subsection]] = None
