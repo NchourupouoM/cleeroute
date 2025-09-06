@@ -7,9 +7,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Header, HTTPException
 import os
 from dotenv import load_dotenv
-from src.cleeroute.models import (
-    Project
-)
+from ..models import Project
 
 from src.cleeroute.langGraph.prompt_tamplate import PROGECT_GENERATE_PROMPT
 load_dotenv()

@@ -1,7 +1,5 @@
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from src.cleeroute.crew import Course_structure_crew, Course_meta_datas_crew
-from src.cleeroute.models import CourseInput, Course_meta_datas_input
 import time
 import math
 

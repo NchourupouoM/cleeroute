@@ -4,13 +4,24 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 from typing import TypedDict
 from fastapi import APIRouter, Header, HTTPException
-from typing import Optional
+from typing import Optional, List
+from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 from src.cleeroute.models import (
-    Course,
+    Subsection,
     CourseInput
 )
+
+class Section(BaseModel):
+    title: str
+    description: str
+    subsections: List[Subsection]
+
+class Course(BaseModel):
+    title: str
+    introduction: Optional[str] = None
+    sections: List[Section]
 
 from src.cleeroute.langGraph.prompt_tamplate import COURSE_STRUCTURE_PROMPT
 load_dotenv()

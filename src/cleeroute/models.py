@@ -1,7 +1,5 @@
-from typing import List, Optional, Literal
+from typing import List, Optional
 from pydantic import BaseModel, Field
-from src.cleeroute.langGraph.sections_subsections_sep.models import SubsectionGenerationInput, SubsectionOutput
-from src.cleeroute.langGraph.project_generator import RequiredGenProjInput
 class Course_meta_datas_input(BaseModel):
     response: str
 
@@ -92,18 +90,11 @@ class Section(BaseModel):
     title: str
     description: str
     subsections: List[Subsection]
-
-class Course(BaseModel):
-    title: str
-    introduction: Optional[str] = None
-    sections: List[Section]
-
-# complete course structure for the humain in the loop action
-
-class SectionWtihProject(Section):
     project: Project
+    
+# complete course structure for the humain in the loop action
 
 class CompleteCourse(BaseModel):
     title: str
     introduction: Optional[str] = None
-    sections: List[SectionWtihProject]
+    sections: List[Section]
