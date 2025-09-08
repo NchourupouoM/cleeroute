@@ -8,10 +8,14 @@ from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_tra
 from src.cleeroute.langGraph.meta_data_gen import router_metadata_2, router_metadata_1
 from src.cleeroute.langGraph.course_agents import course_structure_router
 from src.cleeroute.langGraph.project_generator import project_content_router
+
 from src.cleeroute.langGraph.streaming_project_content.test_streaming import project_content_router_stream
 from src.cleeroute.langGraph.streaming_course_structure.main_course import course_structure_router_stream
 
 from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import course_outline_router, course_subsections_router
+
+from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
+
 from fastapi import APIRouter
 
 app = FastAPI()
@@ -170,6 +174,9 @@ app.include_router(course_subsections_router, prefix="", tags=["Sections and sub
 # =======================================================================================
 app.include_router(project_content_router, prefix="", tags=["Project content Generators"])
 app.include_router(project_content_router_stream, prefix="", tags=["Project content Generators"])
+# ============================================================================================
+app.include_router(course_modification_router, prefix="", tags=["Course structure update"])
+app.include_router(course_human_intervention_router, prefix="", tags=["Course structure update"])
     
 if __name__ == "__main__":
     import uvicorn

@@ -13,3 +13,4 @@ langchain_community
 tavily-python
 python-dotenv
 langchain_groq
+thefuzz
