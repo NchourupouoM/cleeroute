@@ -88,7 +88,7 @@ class ModificationResponse(BaseModel):
     course: Optional[CompleteCourse] = None # Le cours modifié, si l'opération est 'completed'
 
     
-@course_modification_router.post("/course/modify", response_model=ModificationResponse, summary="Lancer une modification de cours")
+@course_modification_router.post("/course/modify", response_model=ModificationResponse, summary="Launch a course modification")
 async def modify_course(
     request: ModifyCourseRequest,
     x_gemini_api_key: Optional[str] = Header(None, alias="X-Gemini-Api-Key")
@@ -164,7 +164,7 @@ async def modify_course(
         raise HTTPException(status_code=500, detail=f"Erreur interne du serveur lors de la modification: {e}")
 
 
-@course_human_intervention_router.post("/course/intervene/{run_id}", response_model=ModificationResponse, summary="Fournir une correction humaine pour une modification en attente")
+@course_human_intervention_router.post("/course/intervene/{run_id}", response_model=ModificationResponse, summary="provide more information for a course modification using the run_id from the first endpoint")
 async def intervene_course(
     run_id: str, 
     correction_request: InterveneCourseRequest,
