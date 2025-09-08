@@ -3,6 +3,7 @@ import json
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import PostgresSaver
 from langgraph.graph import StateGraph, END
 from src.cleeroute.models import (CompleteCourse, ModificationInstruction, InstructionSet
 )
@@ -16,6 +17,11 @@ from uuid import uuid4
 import threading
 import traceback
 from dotenv import load_dotenv
+import asyncio
+
+# checkpointer postgres
+import asyncpg
+
 load_dotenv()
 
 def graph_buider(llm_instance: ChatGoogleGenerativeAI):
@@ -54,8 +60,40 @@ llm_to_use = ChatGoogleGenerativeAI(
         google_api_key= os.getenv("GEMINI_API_KEY"),
 )
 
-memory = MemorySaver()
-graph = graph_buider(llm_instance=llm_to_use).compile(checkpointer=memory)
+checkpointer = None
+
+async def lifespan_startup():
+    global checkpointer
+    
+    DB_URL = os.getenv("DATABASE_URL")
+    if not DB_URL:
+        print("ATTENTION: DATABASE_URL non trouvée. Utilisation d'une mémoire volatile.")
+        checkpointer = MemorySaver()
+        return
+        
+    # On utilise un pool de connexions pour la performance et la fiabilité.
+    # `asyncpg.create_pool` est la méthode recommandée.
+    pool = await asyncpg.create_pool(dsn=DB_URL)
+    
+    # PostgresSaver.create() va créer les tables nécessaires si elles n'existent pas.
+    # Il est important de l'appeler avec `await`.
+    checkpointer = await PostgresSaver.create(pool=pool)
+    print("Connexion au checkpointer Postgres établie avec succès.")
+
+async def lifespan_shutdown():
+    if checkpointer and isinstance(checkpointer, PostgresSaver):
+        await checkpointer.pool.close()
+        print("Connexion au checkpointer Postgres fermée.")
+
+
+asyncio.run(lifespan_startup())
+builder = graph_buider(llm_instance=llm_to_use)
+graph = builder.compile(checkpointer=checkpointer)
+
+
+
+# memory = MemorySaver()
+# graph = graph_buider(llm_instance=llm_to_use).compile(checkpointer=memory)
 
 course_modification_router = APIRouter()
 course_human_intervention_router = APIRouter()
