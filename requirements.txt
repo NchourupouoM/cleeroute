@@ -18,4 +18,3 @@ langgraph-checkpoint-postgres
 asyncio
 asyncpg
 psycopg_binary
-psycopg_c
