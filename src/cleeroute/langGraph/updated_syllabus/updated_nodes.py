@@ -42,11 +42,11 @@ class CourseState(TypedDict):
     """
     Représente l'état du graphe. Version SIMPLIFIÉE et CORRIGÉE.
     """
-    course: CompleteCourse
+    course: dict
     user_input: str
     
     # CLÉ UNIQUE pour les instructions. Fini l'ambiguïté.
-    instructions_to_apply: Optional[InstructionSet] 
+    instructions_to_apply: Optional[dict] 
     
     requires_human_intervention: bool
     human_correction_input: Optional[str] # On garde pour le contexte
@@ -57,14 +57,18 @@ class CourseState(TypedDict):
 def call_gemini_for_parsing(
         state: CourseState,
         llm_instance = ChatGoogleGenerativeAI
-    ) -> CourseState:
+    ) -> dict:
     """
     Appelle le LLM Gemini pour parser la requête de l'utilisateur en un InstructionSet.
     Cette fonction gère à la fois les succès et les échecs de l'appel API.
     """
-    print("\n--- Nœud: call_gemini_for_parsing ---")
+    # 1. DÉSÉRIALISER ("Réhydrater" l'objet)
+    # On prend le dictionnaire de l'état et on le transforme en un objet Pydantic
+    # intelligent avec lequel on peut travailler.
+    print("  -> Désérialisation de l'état 'course' en objet Pydantic...")
+    course_obj = CompleteCourse.model_validate(state['course'])
     user_input = state["user_input"]
-    course_json = state["course"].model_dump_json(indent=2)
+    course_json = course_obj.model_dump_json(indent=2)
 
     prompt = f"""
         You are an AI assistant responsible for analyzing user requests to modify a course structure.
@@ -101,19 +105,26 @@ def call_gemini_for_parsing(
     print(f"Set d'instructions parsé: {instruction_set.model_dump_json(indent=2)}")
     
     return {
-        "instructions_to_apply": instruction_set, 
+        # On convertit l'objet Pydantic `InstructionSet` en dictionnaire
+        # avant de le mettre dans l'état.
+        "instructions_to_apply": instruction_set.model_dump(), 
         "requires_human_intervention": instruction_set.requires_human_intervention,
         "error_message": instruction_set.error_message,
     }
                    
 def check_intervention_needed(state: CourseState) -> Literal["human_intervention", "apply_changes"]:
     """
-    Conditional node to determine if a human intervention is needed.
+    Décide de la prochaine étape après le parsing.
+    Retourne UNIQUEMENT les noms des nœuds suivants.
     """
     print("\n--- Nœud: check_intervention_needed ---")
-    if state["requires_human_intervention"]:
-        print("Intervention humaine requise.")
+    
+    # Cas 1: L'IA est bloquée et a besoin d'aide
+    if state.get("requires_human_intervention"):
+        print("Intervention humaine requise (Clarification).")
         return "human_intervention"
+        
+    # Cas 2: La requête est claire et peut être appliquée
     else:
         print("Aucune intervention humaine requise. Application des changements.")
         return "apply_changes"
@@ -123,7 +134,16 @@ def human_intervention_node(state: CourseState) -> CourseState:
     Node where the graph waits for human intervention.
     """
     print("\n--- Nœud: human_intervention_node --- (POINT D'INTERRUPTION)")
+
+    # On s'assure que le 'course' est bien un dictionnaire
+    course_value = state['course']
+    if isinstance(course_value, CompleteCourse):
+        course_dict = course_value.model_dump()
+    else:
+        course_dict = course_value
+
     return {
+        "course": course_dict,
         "response_message": state.get("error_message", "Clarification nécessaire. Veuillez fournir plus de détails pour continuer.")
     }
 
@@ -133,18 +153,30 @@ def apply_modification_to_course(state: CourseState) -> CourseState:
     Version finale. Lit les instructions depuis la clé unique `instructions_to_apply`.
     """
     print("\n--- Nœud: apply_modification_to_course ---")
-    
-    # CORRECTION : On lit depuis la clé unique. Plus de `or`.
-    instruction_set_to_apply = state.get("instructions_to_apply")
 
-    if not instruction_set_to_apply or not isinstance(instruction_set_to_apply.instructions, list) or not instruction_set_to_apply.instructions:
+    # --- DÉSÉRIALISATION DE L'OBJET 
+    course_obj = CompleteCourse.model_validate(state['course'])
+    
+    # Désérialiser les instructions
+    instruction_set_dict = state.get("instructions_to_apply")
+    if not instruction_set_dict:
+        raise ValueError("Le champ 'instructions_to_apply' est manquant dans l'état.")
+    instruction_set_obj = InstructionSet.model_validate(instruction_set_dict)
+
+    if not instruction_set_obj or not isinstance(instruction_set_obj.instructions, list) or not instruction_set_obj.instructions:
         error_msg = "La liste d'instructions est vide ou invalide."
         print(f"ERREUR: {error_msg}")
-        return {"course": state["course"], "requires_human_intervention": True, "error_message": error_msg, "response_message": error_msg}
+        return {
+            "course": state["course"], 
+            "requires_human_intervention": True, 
+            "error_message": error_msg,
+            "response_message": error_msg
+        }
 
-    course_copy = state["course"].model_copy(deep=True)
+     # On travaille sur une copie de l'objet Pydantic
+    course_copy = course_obj.model_copy(deep=True)
     
-    for i, instruction in enumerate(instruction_set_to_apply.instructions):
+    for i, instruction in enumerate(instruction_set_obj.instructions):
         try:
             target_type = instruction.target_type
             print(f"\n--- Dispatching de l'instruction {i+1}: {instruction.action.value} {target_type} ---")
@@ -165,10 +197,33 @@ def apply_modification_to_course(state: CourseState) -> CourseState:
         except (ValueError, ValidationError) as e:
             error_msg = f"Échec à l'étape {i+1} ({instruction.action.value} {instruction.target_type}): {e}. La modification a été annulée."
             print(f"ERREUR: {error_msg}")
-            return { "course": state["course"], "requires_human_intervention": True, "error_message": error_msg, "response_message": error_msg }
+            return { 
+                "course": state["course"],
+                "requires_human_intervention": True, 
+                "error_message": error_msg, 
+                "response_message": error_msg 
+            }
 
     print("\nModification(s) appliquée(s) avec succès à la copie du cours.")
-    return { "course": course_copy, "response_message": "Les modifications demandées ont été appliquées avec succès.", "requires_human_intervention": False, "error_message": None }
+
+    # NOUVELLE LOGIQUE : On vérifie si un brouillon a été créé
+    was_improvised = any(
+        instr.is_improvised for instr in instruction_set_obj.instructions
+    )
+
+    response_message = "Les modifications demandées ont été appliquées avec succès."
+
+    if was_improvised:
+        response_message = "J'ai pris l'initiative de générer un brouillon pour votre requête. Veuillez le vérifier. Si cela vous convient, vous pouvez continuer. Sinon, vous pouvez demander des modifications."
+
+
+    return { 
+        "course": course_copy.model_dump(), 
+        "response_message": response_message, 
+        "requires_human_intervention": False, 
+        "error_message": None,
+        "was_improvised": was_improvised
+    }
 
 
 def reflect_and_summarize(state: CourseState, llm_instance: ChatGoogleGenerativeAI) -> CourseState:
@@ -176,11 +231,24 @@ def reflect_and_summarize(state: CourseState, llm_instance: ChatGoogleGenerative
     Use gemini to generate a summary of the changes applied to the course.
     """
     print("\n--- Nœud: reflect_and_summarize ---")
-    course_json = state["course"].model_dump_json(indent=2)
+
+    # --- DÉSÉRIALISATION ---
+    course_obj = CompleteCourse.model_validate(state['course'])
+
+    course_json = course_obj.model_dump_json(indent=2)
     original_user_input = state["user_input"]
     applied_instruction = state.get("human_corrected_instruction") or state.get("modification_instruction")
     applied_instruction_json = applied_instruction.model_dump_json(indent=2) if applied_instruction else "Not a specific information saved"
     previous_response = state.get("response_message", "Attempted modification.")
+
+    # On vérifie si le nœud précédent a signalé une improvisation
+    was_improvised = state.get("was_improvised", False)
+    
+    # On ajuste le prompt pour le résumé en fonction du contexte
+    if was_improvised:
+        closing_statement = "You have created a draft. Explain what you improvised and ask the user for validation. Tell them the operation is paused and waiting for their feedback."
+    else:
+        closing_statement = "The operation is complete. Concisely summarize the changes that were made and confirm completion."
 
     prompt = f"""
         You are an AI assistant reflecting on a course modification task.
@@ -195,7 +263,8 @@ def reflect_and_summarize(state: CourseState, llm_instance: ChatGoogleGenerative
         {course_json}
         ```
         Please provide a concise and user-friendly summary of the changes that were made,
-        or confirm the current state of the course, and mention that the operation is complete.
+        or confirm the current state of the course, and mention that the operation is complete 
+        Based on all the above, provide a user-friendly summary. {closing_statement}
     """
 
     messages = [
@@ -208,5 +277,5 @@ def reflect_and_summarize(state: CourseState, llm_instance: ChatGoogleGenerative
     print(f"Résumé Gemini:\n{summary}")
     return {
         "response_message": summary,
-        "requires_human_intervention": False
+        "requires_human_intervention": was_improvised
     }

@@ -306,7 +306,10 @@ class ModificationInstruction(BaseModel):
     subsection_title_id: Optional[str] = None
     new_title: Optional[str] = None
     new_description: Optional[str] = None
-
+    is_improvised: bool = Field(
+        default=False, 
+        description="True if the AI generated the content for this instruction (e.g., a description) because it was missing from the user's request."
+    )
     new_value: Union[str, dict, List[str], None] = None 
     index: Optional[int] = None
 

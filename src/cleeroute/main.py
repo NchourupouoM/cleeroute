@@ -11,21 +11,20 @@ from src.cleeroute.langGraph.project_generator import project_content_router
 
 from src.cleeroute.langGraph.streaming_project_content.test_streaming import project_content_router_stream
 from src.cleeroute.langGraph.streaming_course_structure.main_course import course_structure_router_stream
-
 from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import course_outline_router, course_subsections_router
-
-from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router, lifespan_startup, lifespan_shutdown
-
+from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
 from fastapi import APIRouter
+# from contextlib import asynccontextmanager
 
-from contextlib import asynccontextmanager
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await lifespan_startup()
-    yield
-    await lifespan_shutdown()
 
-app = FastAPI(lifespan=lifespan)
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     await lifespan_startup()
+#     yield
+#     await lifespan_shutdown()
+
+
+app = FastAPI()
 
 # Configurer les origines autorisées
 origins = [

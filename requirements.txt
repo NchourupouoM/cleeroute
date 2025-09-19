@@ -14,3 +14,7 @@ tavily-python
 python-dotenv
 langchain_groq
 thefuzz
+langgraph-checkpoint-postgres
+asyncio
+asyncpg
+contextlib

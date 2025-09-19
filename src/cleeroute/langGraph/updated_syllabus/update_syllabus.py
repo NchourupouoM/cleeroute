@@ -1,29 +1,23 @@
 import os
-import json
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, ValidationError
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.memory import PostgresSaver
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import StateGraph, END
-from src.cleeroute.models import (CompleteCourse, ModificationInstruction, InstructionSet
+from src.cleeroute.models import (CompleteCourse, InstructionSet
 )
+from pydantic import BaseModel
 from src.cleeroute.langGraph.updated_syllabus.updated_nodes import call_gemini_for_parsing, human_intervention_node, apply_modification_to_course, reflect_and_summarize,check_intervention_needed ,CourseState,generate_gemini_structured_output_response
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.cleeroute.langGraph.updated_syllabus.prompts import SPECIFIC_INSTRUCTIONS_PROMPT
 from typing import Literal, Optional
 from fastapi import APIRouter, HTTPException, Header
-from fastapi.responses import JSONResponse
 from uuid import uuid4
-import threading
 import traceback
 from dotenv import load_dotenv
-import asyncio
-
-# checkpointer postgres
-import asyncpg
-
+import psycopg
 load_dotenv()
 
+# ==== graph definition 
 def graph_buider(llm_instance: ChatGoogleGenerativeAI):
     # --- 5. Construction du Graphe Langgraph ---
     builder = StateGraph(CourseState)
@@ -43,65 +37,45 @@ def graph_buider(llm_instance: ChatGoogleGenerativeAI):
             "apply_changes": "apply_changes"
         }
     )
-
     # Ajout de l'arête pour la reprise après intervention humaine
     # Le endpoint /intervene va mettre à jour l'état, puis le graphe
     # reprendra à partir d'ici et suivra cette arête.
     builder.add_edge("human_intervention_wait", "apply_changes")
-
     builder.add_edge("apply_changes", "summarize_changes")
-    builder.add_edge("summarize_changes", END)
-
-
+    # builder.add_edge("summarize_changes", END)
+    builder.add_edge("apply_changes", "summarize_changes")
+    # NOUVEAU : On ajoute une étape de décision après le résumé
+    builder.add_conditional_edges(
+        "summarize_changes",
+        lambda state: "human_intervention_wait" if state.get("requires_human_intervention") else END,
+        {
+            "human_intervention_wait": "human_intervention_wait",
+            END: END
+        }
+    )
     return builder
+
+
 
 llm_to_use = ChatGoogleGenerativeAI(
         model=os.getenv("MODEL_2"),
         google_api_key= os.getenv("GEMINI_API_KEY"),
 )
 
-checkpointer = None
 
-async def lifespan_startup():
-    global checkpointer
-    
-    DB_URL = os.getenv("DATABASE_URL")
-    if not DB_URL:
-        print("ATTENTION: DATABASE_URL non trouvée. Utilisation d'une mémoire volatile.")
-        checkpointer = MemorySaver()
-        return
-        
-    # On utilise un pool de connexions pour la performance et la fiabilité.
-    # `asyncpg.create_pool` est la méthode recommandée.
-    pool = await asyncpg.create_pool(dsn=DB_URL)
-    
-    # PostgresSaver.create() va créer les tables nécessaires si elles n'existent pas.
-    # Il est important de l'appeler avec `await`.
-    checkpointer = await PostgresSaver.create(pool=pool)
-    print("Connexion au checkpointer Postgres établie avec succès.")
+conn = psycopg.connect(os.getenv("DATABASE_URL"), autocommit=True)
+checkpointer = PostgresSaver(conn)
+# checkpointer.setup()
 
-async def lifespan_shutdown():
-    if checkpointer and isinstance(checkpointer, PostgresSaver):
-        await checkpointer.pool.close()
-        print("Connexion au checkpointer Postgres fermée.")
-
-
-asyncio.run(lifespan_startup())
 builder = graph_buider(llm_instance=llm_to_use)
 graph = builder.compile(checkpointer=checkpointer)
 
-
-
-# memory = MemorySaver()
-# graph = graph_buider(llm_instance=llm_to_use).compile(checkpointer=memory)
 
 course_modification_router = APIRouter()
 course_human_intervention_router = APIRouter()
 
 
-# class UserRequest(BaseModel):
-#     user_input: str# Modèles de requête pour les API
-
+# imput and intervention models 
 class ModifyCourseRequest(BaseModel):
     course: CompleteCourse
     user_input: str
@@ -109,14 +83,6 @@ class ModifyCourseRequest(BaseModel):
 class InterveneCourseRequest(BaseModel):
     correction_input: str
 
-# Modèle de réponse pour les API de modification/intervention
-# Modèles de requête pour les API
-class ModifyCourseRequest(BaseModel):
-    course: CompleteCourse
-    user_input: str
-
-class InterveneCourseRequest(BaseModel):
-    correction_input: str
 
 # Modèle de réponse pour les API de modification/intervention
 class ModificationResponse(BaseModel):
@@ -135,7 +101,7 @@ async def modify_course(
     print(f"Démarrage d'une nouvelle exécution de modification avec l'ID: {thread_id}")
 
     initial_state = CourseState(
-        course=request.course,
+        course=request.course.model_dump(),
         user_input=request.user_input,
         requires_human_intervention=False, # Initialement supposé pas d'intervention
         current_run_id=thread_id,
@@ -230,6 +196,14 @@ async def intervene_course(
             raise HTTPException(status_code=404, detail=f"ID d'exécution '{run_id}' introuvable ou déjà terminé.")
         
         state_values: CourseState = current_graph_state_from_checkpointer.values
+
+        # 2. DÉSÉRIALISER l'état avant de l'utiliser
+        # On transforme le dictionnaire `course` en un objet Pydantic intelligent.
+        try:
+            course_obj = CompleteCourse.model_validate(state_values['course'])
+        except KeyError:
+             raise HTTPException(status_code=404, detail="L'état sauvegardé est corrompu (clé 'course' manquante).")
+
         
         # 2. Construire le prompt pour re-parser en un `InstructionSet`
         reparse_prompt = f"""
@@ -245,7 +219,7 @@ async def intervene_course(
 
                 --- Course Context ---
                 ```json
-                {state_values["course"].model_dump_json(indent=2)}
+                {course_obj.model_dump_json(indent=2)}
                 ```
 
                 Generate the `InstructionSet`. Set "requires_human_intervention": false.
@@ -269,10 +243,11 @@ async def intervene_course(
                 run_id=run_id,
                 message=human_corrected_instructions.error_message
             )
+        current_course_obj = CompleteCourse.model_validate(state_values['course'])
 
         # 5. Mettre à jour l'état du graphe avec les instructions corrigées pour la reprise
         updates_for_resume = {
-        "instructions_to_apply": human_corrected_instructions,
+        "instructions_to_apply": human_corrected_instructions.model_dump(),
         "requires_human_intervention": False,
         "error_message": None,
         }
