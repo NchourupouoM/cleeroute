@@ -232,7 +232,6 @@ tokenizers==0.20.3
 toml==0.10.2
 tomli==2.2.1
 tomli_w==1.2.0
-torch==2.7.1+cpu
 tornado==6.5.1
 tqdm==4.67.1
 traitlets==5.14.3
