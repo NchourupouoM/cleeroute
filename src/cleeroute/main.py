@@ -1,7 +1,6 @@
 from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 import time
-import math
 
 from src.cleeroute.db.models import VideoSearch, VideoResponse, PaginatedVideoResponse
 from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string
@@ -13,6 +12,7 @@ from src.cleeroute.langGraph.streaming_project_content.test_streaming import pro
 from src.cleeroute.langGraph.streaming_course_structure.main_course import course_structure_router_stream
 from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import course_outline_router, course_subsections_router
 from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
+from src.cleeroute.langGraph.learners_api.routers import syllabus_router
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
 
@@ -181,8 +181,11 @@ app.include_router(course_subsections_router, prefix="", tags=["Sections and sub
 app.include_router(project_content_router, prefix="", tags=["Project content Generators"])
 app.include_router(project_content_router_stream, prefix="", tags=["Project content Generators"])
 # ============================================================================================
-app.include_router(course_modification_router, prefix="", tags=["Course structure update"])
-app.include_router(course_human_intervention_router, prefix="", tags=["Course structure update"])
+# app.include_router(course_modification_router, prefix="", tags=["Course structure update"])
+# app.include_router(course_human_intervention_router, prefix="", tags=["Course structure update"])
+# ============================================================================================
+app.include_router(syllabus_router, prefix="", tags=["Syllabus Generators for Learners using youtube playlists"])
+
     
 if __name__ == "__main__":
     import uvicorn
