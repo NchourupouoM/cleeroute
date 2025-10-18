@@ -86,18 +86,19 @@ async def continue_learning_journey(
     current_history = current_values.get('conversation_history', [])
 
     # 2. PRÉPARER la mise à jour
-    updates_to_save = {}
-    if current_history:
-        # On prend le dernier tour (qui contient la question de l'IA)
-        last_human, last_ai = current_history[-1]
+    # updates_to_save = {}
+    # if current_history:
+    #     # On prend le dernier tour (qui contient la question de l'IA)
+    #     last_human, last_ai = current_history[-1]
         
-        # On crée une NOUVELLE liste d'historique avec le dernier tour mis à jour.
-        # On prend tout sauf le dernier élément, et on ajoute le dernier élément corrigé.
-        updated_history = current_history[:-1] + [(request.user_answer, last_ai)]
-        updates_to_save["conversation_history"] = updated_history
+    #     # On crée une NOUVELLE liste d'historique avec le dernier tour mis à jour.
+    #     # On prend tout sauf le dernier élément, et on ajoute le dernier élément corrigé.
+    #     updated_history = current_history[:-1] + [(request.user_answer, last_ai)]
+    #     updates_to_save["conversation_history"] = updated_history
     
+    update_payload = {"conversation_history": [(request.user_answer, "")]}
 
-    await app_graph.aupdate_state(config, {"conversation_history": updated_history})
+    await app_graph.aupdate_state(config, update_payload)
 
     # 4. Resume the graph execution
     # Étape 2: Reprendre le graphe SANS nouvelle entrée.

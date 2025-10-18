@@ -122,10 +122,6 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
 
     content = response.content.strip()
 
-    # Nettoyage de la sortie du LLM
-    if "<strategy>" in content:
-        content = content.split("</strategy>")[-1].strip()
-
     if "[CONVERSATION_FINISHED]" in content:
         print("--- Conversation Finished ---")
         return {"is_conversation_finished": True, "current_question": None}
@@ -133,12 +129,20 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
         question = content
         print(f"--- Asking User: {question} ---")
         
-        last_human_answer = history_tuples[-1][0] if history_tuples else ""
-        
+        # On prend une copie de l'historique
+        current_history = list(state.get('conversation_history', []))
+
+        # On MET À JOUR le dernier tour avec la nouvelle question de l'IA
+        if current_history:
+            last_human, _ = current_history[-1]
+            current_history[-1] = (last_human, question)
+        else: # Cas du tout premier tour
+            current_history.append(("", question))
+
         return {
             "is_conversation_finished": False,
             "current_question": question,
-            "conversation_history": [(f"{last_human_answer}", question)]
+            "conversation_history": current_history
         }
 
 def should_continue_conversation(state: GraphState) -> Literal["continue_conversation", "end_conversation"]:
