@@ -65,7 +65,9 @@ class GraphState(TypedDict):
     searched_playlists_str: Annotated[List[str], _overwrite]
     merged_resources_str: Annotated[List[str], _overwrite]
 
-    syllabus_plan_str: Annotated[Optional[str], _overwrite]
+    syllabus_blueprint_str: Annotated[Optional[str], _overwrite]
+
+    found_project_videos: Annotated[Optional[str], _overwrite]
     
     # --- Final Output ---
     final_syllabus_options_str: Annotated[Optional[str], _overwrite]

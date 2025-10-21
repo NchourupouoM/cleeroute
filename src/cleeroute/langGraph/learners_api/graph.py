@@ -1,23 +1,39 @@
 # In app/graph.py
 
 import os
-from typing import List, Literal
+from typing import List, Literal, Dict
 import json
 from langchain_core.messages import HumanMessage, AIMessage
 from pydantic import BaseModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
-
+import re
 from .models import Course_meta_datas, AnalyzedPlaylist, SyllabusOptions
 from .state import GraphState, PydanticSerializer
 from .prompt import Prompts
+import asyncio
+from googleapiclient.discovery import build
+from .models import VideoInfo
 from .services import fetch_playlist_details, search_and_filter_youtube_playlists
-from .database import checkpointer
+# from .database import checkpointer
+from src.cleeroute.db.checkpointer import get_checkpointer
 from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize the LLM
-llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
+llm = ChatGoogleGenerativeAI(
+    model=os.getenv("MODEL_2"), 
+    google_api_key=os.getenv("GEMINI_API_KEY"),
+)
+
+# google api
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+if not YOUTUBE_API_KEY:
+    raise ValueError("YOUTUBE_API_KEY must be set in env")
+
+youtube_service = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+
+checkpointer = get_checkpointer()
 
 # --------------------------
 # Graph Nodes
@@ -92,6 +108,7 @@ async def search_resources(state: GraphState) -> dict:
         return {"searched_playlists_str": [PydanticSerializer.dumps(p) for p in playlists]}
     return {}
 
+
 def merge_resources(state: GraphState) -> dict: # <-- Retourne un dict
     """Merges user playlist and searched playlists."""
     print("--- Merging Resources ---")
@@ -152,73 +169,13 @@ def should_continue_conversation(state: GraphState) -> Literal["continue_convers
         return "end_conversation"
     return "continue_conversation"
 
-# async def synthesize_paths(state: GraphState) -> dict:
-    # """
-    # Synthesizes the final course syllabus. This is the definitive, correct version.
-    # """
-    # print("--- Synthesizing Final Syllabus ---"
-        #   )
-    # playlists = state.get('merged_resources_str')
-# 
-    # if not playlists:
-        # print("--- No resources found. Returning empty syllabus. ---")
-        # empty_syllabus = SyllabusOptions(syllabi=[])
-        # return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
-# 
-    # 1. Préparer toutes les données de base
-    # metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
-    # conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state['conversation_history']])
-    # 
-    # merged_playlists_json_str = f"[{','.join(state['merged_resources_str'])}]"
-    # playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
-# 
-    # 2. Préparer les variables spécifiques au prompt
-    # resources_summary = ""
-    # video_map_for_llm = {}
-    # for p in playlists:
-        # resources_summary += f"\n--- Playlist: {p.playlist_title} ---\n"
-        # for video in p.videos:
-            # resources_summary += f" Title: {video.title}\n"
-            # video_map_for_llm[video.title] = str(video.video_url)
-            # 
-    # video_map_json_str = json.dumps(video_map_for_llm, indent=2)
-    # is_single_user_playlist = len(playlists) == 1 and state.get('user_input_link') is not None
-# 
-    # 3. Formater le prompt avec TOUTES les variables attendues
-    # prompt = Prompts.SYNTHESIZE_SYLLABUS.format(
-        # user_input=state['user_input_text'],
-        # conversation_summary=conversation_summary,
-        # metadata=metadata.model_dump_json(indent=2),
-        # is_single_user_playlist=is_single_user_playlist,
-        # resources_summary=resources_summary,
-        # video_map=video_map_json_str 
-    # )
-    # 
-    # 4. Exécuter et retourner
-    # structured_llm = llm.with_structured_output(SyllabusOptions)
-    # try:
-        # syllabus_options = await structured_llm.ainvoke(prompt)
-# 
-        # if not syllabus_options or not syllabus_options.syllabi:
-            # print("--- WARNING: LLM returned a valid but empty syllabus. ---")
-            # On s'assure de retourner une structure valide même dans ce cas
-            # empty_syllabus = SyllabusOptions(syllabi=[])
-            # return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
-# 
-        # print("--- Syllabus Synthesized Successfully ---")
-        # return {"final_syllabus_options_str": PydanticSerializer.dumps(syllabus_options)}
-    # 
-    # except Exception as e:
-        # print(f"--- ERROR during LLM synthesis: {e}. Returning empty syllabus. ---")
-        # empty_syllabus = SyllabusOptions(syllabi=[])
-        # return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
-# --- NOUVEAU NŒUD 1: plan_syllabus ---
 
+# --- NOUVEAU NŒUD 1: plan_syllabus ---
 async def plan_syllabus(state: GraphState) -> dict:
     print("--- Planning the Syllabus Structure ---")
     
     if not state.get('merged_resources_str'):
-        return {"syllabus_plan_str": "No resources found."}
+        return {"syllabus_blueprint_str": "No resources found."}
     
     # On désérialise les données dont on a besoin
     metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
@@ -227,15 +184,22 @@ async def plan_syllabus(state: GraphState) -> dict:
     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
     
     # Préparation du 'resources_summary'
+    video_counter = 1
+    # On crée une map ID -> VideoInfo pour plus tard
+    video_details_map = {} 
+
     resources_summary = ""
     for p in playlists:
         resources_summary += f"\n--- Playlist: {p.playlist_title} ---\n"
         for video in p.videos:
-            resources_summary += f'  - Title: "{video.title}", URL: "{str(video.video_url)}"\n'
+            video_id = f"video_{video_counter}"
+            resources_summary += f'  - Title: "{video.title}", URL: "{str(video.video_url)}" -Channel: "{video.channel_title}"\n'
+            video_details_map[video_id] = video
+            video_counter += 1
             
     is_single_user_playlist = len(playlists) == 1 and state.get('user_input_link') is not None
 
-    prompt = Prompts.PLAN_SYLLABUS.format(
+    prompt = Prompts.PLAN_SYLLABUS_WITH_PLACEHOLDERS.format(
         user_input=state['user_input_text'],
         conversation_summary=conversation_summary,
         resources_summary=resources_summary,
@@ -248,14 +212,144 @@ async def plan_syllabus(state: GraphState) -> dict:
     print("--- Syllabus Plan Created ---")
     
     # On retourne le plan (qui est déjà une chaîne)
-    return {"syllabus_plan_str": plan}
+    return {"syllabus_blueprint_str": plan}
 
+# NŒUD 2 : RECHERCHE DE VIDÉOS-PROJETS
+async def find_and_search_project_videos(state: GraphState) -> dict:
+    print("--- Searching for specific project videos based on blueprint ---")
+    plan_str = state.get('syllabus_blueprint_str', '')
+    
+    # C'est une simplification, une meilleure version parserait le plan plus en détail.
+    placeholders = re.findall(r'\[SEARCH_FOR_PRACTICAL_VIDEO: "(.+?)"\]', plan_str)
+    
+    if not placeholders:
+        print("--- No project videos to search for. ---")
+        return {"found_project_videos_str": PydanticSerializer.dumps({})}
+
+    found_videos_map = {}
+    print(f"--- Found {len(placeholders)} project video placeholders to search for. ---")
+
+    for query in placeholders:
+        try:
+            request = youtube_service.search().list(
+                q=f"{query} tutorial project",
+                part="snippet", type="video", maxResults=1, videoDuration="medium"
+            )
+            response = await asyncio.to_thread(request.execute)
+            
+            if response.get("items"):
+                item = response["items"][0]
+                video_id = item["id"]["videoId"]
+                snippet = item["snippet"]
+                thumbnails = snippet.get("thumbnails", {})
+                thumbnail_url = (thumbnails.get("high", {}) or thumbnails.get("default", {})).get("url")
+
+                video_info = VideoInfo(
+                    title=snippet["title"],
+                    video_url=f"https://www.youtube.com/watch?v={video_id}",
+                    thumbnail_url=thumbnail_url
+                )
+                found_videos_map[query] = video_info
+        except Exception as e:
+            print(f"--- ERROR searching for video '{query}': {e} ---")
+            
+    found_videos_map_dicts = {
+        query: video.model_dump(mode='json')
+        for query, video in found_videos_map.items()
+    }
+
+    found_videos_json_str = json.dumps(found_videos_map_dicts)
+
+    print(f"--- Found {len(found_videos_map)} project videos. ---")
+    return {"found_project_videos_str": found_videos_json_str}
+
+async def finalize_syllabus_json(state: GraphState) -> dict:
+    """
+    Assembles the final syllabus by combining the blueprint with found project videos,
+    then calls an LLM to translate this completed plan into a valid JSON object.
+    """
+    print("--- Finalizing Syllabus JSON ---")
+    
+    # 1. Charger toutes les données nécessaires depuis l'état
+    blueprint_str = state.get('syllabus_blueprint_str', '')
+    found_videos_str = state.get('found_project_videos_str', '{}')
+    merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
+
+    # 2. Vérifier si un plan a été créé
+    if not blueprint_str or "No resources found" in blueprint_str:
+        print("--- No blueprint to process. Returning empty syllabus. ---")
+        empty_syllabus = SyllabusOptions(syllabi=[])
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
+
+    # 3. Désérialiser les données en objets Python
+    found_videos = PydanticSerializer.loads(found_videos_str, Dict[str, VideoInfo])
+    playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
+
+    # 4. Construire la "Video Map" complète (Source de vérité pour les URL)
+    video_map = {}
+    # Ajouter les vidéos des playlists originales
+    for p in playlists:
+        for video in p.videos:
+            video_map[video.title] = {
+                "url": str(video.video_url),
+                "thumbnail_url": str(video.thumbnail_url) if video.thumbnail_url else None,
+                "channel_title": video.channel_title
+            }
+    # Ajouter les vidéos-projets trouvées
+    for video in found_videos.values():
+        video_map[video.title] = {
+            "url": str(video.video_url),
+            "thumbnail_url": str(video.thumbnail_url) if video.thumbnail_url else None,
+            "channel_title": video.channel_title
+        }
+
+    # 5. Finaliser le blueprint en remplaçant les placeholders
+    final_blueprint_str = blueprint_str
+    for query, video in found_videos.items():
+        placeholder = f'[SEARCH_FOR_PRACTICAL_VIDEO: "{query}"]'
+        final_blueprint_str = final_blueprint_str.replace(placeholder, video.title)
+    
+    # 6. Préparer les données pour le prompt
+    conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
+    
+    # On convertit en JSON pour le prompt
+    found_videos_json_str = json.dumps(
+        {query: video.model_dump(mode='json') for query, video in found_videos.items()},
+        indent=2
+    )
+    video_map_json_str = json.dumps(video_map, indent=2)
+
+    prompt = Prompts.FINALIZE_SYLLABUS_JSON.format(
+        conversation_summary=conversation_summary,
+        final_syllabus_plan=final_blueprint_str,
+        found_project_videos=found_videos_json_str,
+        video_map=video_map_json_str
+    )
+
+    # 7. Appeler le LLM avec 'with_structured_output' pour une sortie garantie
+    structured_llm = llm.with_structured_output(SyllabusOptions)
+    try:
+        syllabus_options = await structured_llm.ainvoke(prompt)
+        
+        if not syllabus_options or not syllabus_options.syllabi:
+            print("--- WARNING: Final LLM translation resulted in an empty syllabus. ---")
+            syllabus_options = SyllabusOptions(syllabi=[])
+
+        print("--- Final Syllabus JSON Generated Successfully ---")
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(syllabus_options)}
+    except Exception as e:
+        print(f"--- FATAL ERROR during final JSON translation: {e} ---")
+        empty_syllabus = SyllabusOptions(syllabi=[])
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
 
 # --- NOUVEAU NŒUD 2: generate_json_from_plan ---
 async def generate_json_from_plan(state: GraphState) -> dict:
     print("--- Translating Plan to JSON ---")
+
+    plan_str = state.get('syllabus_plan_str', '')
+    found_videos = PydanticSerializer.loads(state.get('found_project_videos_str', '{}'), dict)
     
-    plan_str = state.get('syllabus_plan_str')
+    final_plan_str = plan_str
     if not plan_str or "No resources found" in plan_str:
         print("--- No plan to translate. Returning empty syllabus. ---")
         empty_syllabus = SyllabusOptions(syllabi=[])
@@ -365,9 +459,9 @@ def create_syllabus_generation_graph():
     workflow.add_node("search_resources", search_resources)
     workflow.add_node("merge_resources", merge_resources)
 
-    # workflow.add_node("synthesize_paths", synthesize_paths)
     workflow.add_node("plan_syllabus", plan_syllabus)
-    workflow.add_node("generate_json_from_plan", generate_json_from_plan)
+    workflow.add_node("find_and_search_project_videos", find_and_search_project_videos)
+    workflow.add_node("finalize_syllabus_json", finalize_syllabus_json)
     
     # --- Arêtes ---
     workflow.set_entry_point("start_generation")
@@ -389,8 +483,8 @@ def create_syllabus_generation_graph():
     # workflow.add_edge("merge_resources", "synthesize_paths")
     # workflow.add_edge("synthesize_paths", END)
     workflow.add_edge("merge_resources", "plan_syllabus")
-    workflow.add_edge("plan_syllabus", "generate_json_from_plan")
-    workflow.add_edge("generate_json_from_plan", END)
+    workflow.add_edge("plan_syllabus", "find_and_search_project_videos")
+    workflow.add_edge("find_and_search_project_videos", "finalize_syllabus_json")
+    workflow.add_edge("finalize_syllabus_json", END)
 
-    
     return workflow.compile(checkpointer=checkpointer)

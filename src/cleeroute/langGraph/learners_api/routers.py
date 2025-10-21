@@ -13,12 +13,13 @@ from .models import (
     ContinueJourneyRequest, 
     JourneyStatusResponse
 )
-from .database import checkpointer
+from src.cleeroute.db.checkpointer import get_checkpointer
 from .state import GraphState, PydanticSerializer
 from .dependencies import get_conversation_graph, get_syllabus_graph  # We will create this dependency injector
 
 # Create a new router instance
 # This allows us to group all related endpoints under a common prefix and tag
+checkpointer = get_checkpointer()
 syllabus_router = APIRouter()
 
 @syllabus_router.post(

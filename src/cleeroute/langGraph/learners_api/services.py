@@ -3,7 +3,7 @@
 import os
 import json
 from typing import List, Optional
-
+import asyncio
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -55,6 +55,7 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
 
         playlist_info = playlist_response['items'][0]['snippet']
         playlist_title = playlist_info['title']
+        playlist_description = playlist_info.get('description')
 
         video_infos: List[VideoInfo] = []
         next_page_token = None
@@ -73,12 +74,23 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
                 snippet = item.get("snippet", {})
                 video_id = snippet.get("resourceId", {}).get("videoId")
                 if video_id:
+                    # recuperation de la miniature
+                    thumbnails = snippet.get("thumbnails", {})
+                    thumbnail_url = (
+                        thumbnails.get("maxres", {}) or
+                        thumbnails.get("standard", {}) or
+                        thumbnails.get("high", {}) or
+                        thumbnails.get("medium", {}) or
+                        thumbnails.get("default", {})
+                    ).get("url")
+
                     video_infos.append(
                         VideoInfo(
                             title=snippet.get("title"),
                             description=snippet.get("description"),
                             video_url=f"https://www.youtube.com/watch?v={video_id}",
                             channel_title=snippet.get("videoOwnerChannelTitle"),
+                            thumbnail_url=thumbnail_url,
                         )
                     )
             
@@ -89,6 +101,7 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
         return AnalyzedPlaylist(
             playlist_title=playlist_title,
             playlist_url=f"https://www.youtube.com/playlist?list={playlist_id}",
+            playlist_description=playlist_description,
             videos=video_infos
         )
 
@@ -103,7 +116,7 @@ async def search_and_filter_youtube_playlists(
     queries: List[str], 
     user_input: str,
     max_candidates_per_query: int = 100,
-    max_final_playlists: int = 10
+    max_final_playlists: int = 20
 ) -> List[AnalyzedPlaylist]:
     """
     Performs a high-quality, multi-step search for YouTube playlists.
@@ -112,43 +125,53 @@ async def search_and_filter_youtube_playlists(
     3. Fetches full details for only the selected playlists.
     """
     print("--- Starting High-Quality YouTube Search ---")
+
+    # 1. Recherche des candidats en parallèle
+    def search_task(query: str):
+        try:
+            request = youtube_service.search().list(
+                q=query, part="snippet", type="playlist", maxResults=max_candidates_per_query, order="date"
+            )
+            return request.execute()
+        except HttpError as e:
+            print(f"An HTTP error occurred during search for '{query}': {e}")
+            return None
+
+    search_tasks = [asyncio.to_thread(search_task, query) for query in queries]
+    search_results = await asyncio.gather(*search_tasks)
     
     # 1. Search for candidate playlists (cette partie est correcte)
     candidate_playlists = []
     unique_ids = set()
     
-    for query in queries:
-        try:
-            request = youtube_service.search().list(
-                q=query,
-                part="snippet",
-                type="playlist",
-                maxResults=max_candidates_per_query
-            )
-            youtube_response = request.execute() # Utiliser un nom de variable différent pour éviter la confusion
-            
-            for item in youtube_response.get("items", []):
+    for response in search_results:
+        if response:
+            for item in response.get("items", []):
                 playlist_id = item["id"]["playlistId"]
                 if playlist_id not in unique_ids:
                     snippet = item["snippet"]
                     candidate_playlists.append({
                         "id": playlist_id,
                         "title": snippet["title"],
-                        "description": snippet["description"]
+                        "description": snippet["description"],
+                        "publishedAt": snippet["publishedAt"]
                     })
                     unique_ids.add(playlist_id)
-
-        except HttpError as e:
-            print(f"An HTTP error occurred during search for '{query}': {e}")
-            continue
 
     if not candidate_playlists:
         print("--- No playlist candidates found. ---")
         return []
-
-    # 2. Use LLM to filter candidates (CETTE PARTIE EST ENTIÈREMENT REMPLACÉE)
-    print(f"--- Found {len(candidate_playlists)} candidates. Filtering with LLM... ---")
     
+    # 2. TRIER TOUS LES CANDIDATS PAR DATE (la nouveauté d'abord)
+    candidate_playlists.sort(key=lambda p: p['publishedAt'], reverse=True)
+
+    # On prend les 75 plus récents pour les envoyer au LLM (optimisation)
+    newest_candidates = candidate_playlists[:75]
+    print(f"--- Found {len(candidate_playlists)} total candidates. Selecting the 75 newest for LLM filtering. ---")
+
+     # 3. Filtrage par le LLM (sur la liste des plus récents)
+    candidates_str = json.dumps(newest_candidates, indent=2)
+
     candidates_str = json.dumps(candidate_playlists, indent=2)
     prompt = Prompts.FILTER_YOUTUBE_PLAYLISTS.format(
         user_input=user_input,

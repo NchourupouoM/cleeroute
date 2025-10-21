@@ -77,9 +77,11 @@ class VideoInfo(BaseModel):
     description: Optional[str] = None
     video_url: HttpUrl
     channel_title: Optional[str] = None
+    thumbnail_url: Optional[HttpUrl] = None
 
 class AnalyzedPlaylist(BaseModel):
     playlist_title: str
+    playlist_description: Optional[str] = None
     playlist_url: HttpUrl
     videos: List[VideoInfo]
 
@@ -99,6 +101,8 @@ class Subsection(BaseModel):
     title: str
     description: Optional[str] = None
     video_url: HttpUrl
+    thumbnail_url: Optional[HttpUrl] = None
+    channel_title: Optional[str] = None
 
 class Section(BaseModel):
     title: str
@@ -109,6 +113,7 @@ class Section(BaseModel):
 class CompleteCourse(BaseModel):
     title: str
     introduction: Optional[str] = None
+    tag: str
     sections: List[Section]
 
 class SyllabusOptions(BaseModel):

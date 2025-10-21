@@ -2,6 +2,8 @@ from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 import time
 
+from src.cleeroute.db.checkpointer import lifespan
+
 from src.cleeroute.db.models import VideoSearch, VideoResponse, PaginatedVideoResponse
 from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string
 from src.cleeroute.langGraph.meta_data_gen import router_metadata_2, router_metadata_1
@@ -11,7 +13,7 @@ from src.cleeroute.langGraph.project_generator import project_content_router
 from src.cleeroute.langGraph.streaming_project_content.test_streaming import project_content_router_stream
 from src.cleeroute.langGraph.streaming_course_structure.main_course import course_structure_router_stream
 from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import course_outline_router, course_subsections_router
-from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
+# from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
 from src.cleeroute.langGraph.learners_api.routers import syllabus_router
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
@@ -24,7 +26,7 @@ from fastapi import APIRouter
 #     await lifespan_shutdown()
 
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 # Configurer les origines autorisées
 origins = [
