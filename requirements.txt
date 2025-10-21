@@ -18,3 +18,4 @@ langgraph-checkpoint-postgres
 asyncio
 asyncpg
 psycopg_binary
+google-api-python-client
