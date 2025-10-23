@@ -17,6 +17,7 @@ from .models import VideoInfo
 from .services import fetch_playlist_details, search_and_filter_youtube_playlists
 # from .database import checkpointer
 from src.cleeroute.db.checkpointer import get_checkpointer
+import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -24,6 +25,8 @@ load_dotenv()
 llm = ChatGoogleGenerativeAI(
     model=os.getenv("MODEL_2"), 
     google_api_key=os.getenv("GEMINI_API_KEY"),
+    max_tokens=8192,
+    temperature=0.3
 )
 
 # google api
@@ -263,29 +266,31 @@ async def find_and_search_project_videos(state: GraphState) -> dict:
     print(f"--- Found {len(found_videos_map)} project videos. ---")
     return {"found_project_videos_str": found_videos_json_str}
 
+
 async def finalize_syllabus_json(state: GraphState) -> dict:
     """
-    Assembles the final syllabus by combining the blueprint with found project videos,
-    then calls an LLM to translate this completed plan into a valid JSON object.
+    Assembles the final syllabus. This node takes the structured text blueprint,
+    replaces placeholders with found project videos, and then instructs a final
+    LLM to translate this completed plan into a valid JSON object.
     """
-    print("--- Finalizing Syllabus JSON ---")
-    
-    # 1. Charger toutes les données nécessaires depuis l'état
+    print("--- Finalizing Syllabus JSON from Text Blueprint ---")
+
+    # 1. Charger les données brutes depuis l'état
     blueprint_str = state.get('syllabus_blueprint_str', '')
     found_videos_str = state.get('found_project_videos_str', '{}')
     merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
 
-    # 2. Vérifier si un plan a été créé
+    # 2. Vérifier si un plan valide a été créé
     if not blueprint_str or "No resources found" in blueprint_str:
-        print("--- No blueprint to process. Returning empty syllabus. ---")
+        print("--- No valid blueprint to process. Returning empty syllabus. ---")
         empty_syllabus = SyllabusOptions(syllabi=[])
         return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
 
-    # 3. Désérialiser les données en objets Python
+    # 3. Désérialiser les objets nécessaires
     found_videos = PydanticSerializer.loads(found_videos_str, Dict[str, VideoInfo])
     playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
 
-    # 4. Construire la "Video Map" complète (Source de vérité pour les URL)
+    # 4. Construire la "Video Map" complète (Source de vérité pour toutes les URL)
     video_map = {}
     # Ajouter les vidéos des playlists originales
     for p in playlists:
@@ -302,27 +307,25 @@ async def finalize_syllabus_json(state: GraphState) -> dict:
             "thumbnail_url": str(video.thumbnail_url) if video.thumbnail_url else None,
             "channel_title": video.channel_title
         }
-
-    # 5. Finaliser le blueprint en remplaçant les placeholders
+    
+    # 5. Finaliser le blueprint en remplaçant les placeholders (logique de texte simple)
     final_blueprint_str = blueprint_str
     for query, video in found_videos.items():
-        placeholder = f'[SEARCH_FOR_PRACTICAL_VIDEO: "{query}"]'
-        final_blueprint_str = final_blueprint_str.replace(placeholder, video.title)
-    
-    # 6. Préparer les données pour le prompt
+        placeholder_line = f'Placeholder: [SEARCH_FOR_PRACTICAL_VIDEO: "{query}"]'
+        # On remplace la ligne du placeholder par une nouvelle ligne de sous-section complète
+        replacement_line = (
+            f"- Subsection Title: {video.title}\n"
+            f"  Subsection Description: {video.description or 'A practical project video to apply the concepts of this section.'}"
+        )
+        final_blueprint_str = final_blueprint_str.replace(placeholder_line, replacement_line)
+
+    # 6. Préparer les données pour le prompt de traduction
     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
-    
-    # On convertit en JSON pour le prompt
-    found_videos_json_str = json.dumps(
-        {query: video.model_dump(mode='json') for query, video in found_videos.items()},
-        indent=2
-    )
     video_map_json_str = json.dumps(video_map, indent=2)
 
     prompt = Prompts.FINALIZE_SYLLABUS_JSON.format(
         conversation_summary=conversation_summary,
         final_syllabus_plan=final_blueprint_str,
-        found_project_videos=found_videos_json_str,
         video_map=video_map_json_str
     )
 
@@ -338,10 +341,10 @@ async def finalize_syllabus_json(state: GraphState) -> dict:
         print("--- Final Syllabus JSON Generated Successfully ---")
         return {"final_syllabus_options_str": PydanticSerializer.dumps(syllabus_options)}
     except Exception as e:
-        print(f"--- FATAL ERROR during final JSON translation: {e} ---")
+        print(f"--- FATAL ERROR during final structured JSON generation: {e} ---")
         empty_syllabus = SyllabusOptions(syllabi=[])
         return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
-
+    
 # --- NOUVEAU NŒUD 2: generate_json_from_plan ---
 async def generate_json_from_plan(state: GraphState) -> dict:
     print("--- Translating Plan to JSON ---")

@@ -133,6 +133,7 @@ async def continue_learning_journey(
 async def generate_syllabus(
     thread_id: str,
     background_tasks: BackgroundTasks,# Injection de dépendance pour les tâches de fond
+    x_youtube_api_key: Optional[str] = Header(None, alias="X-Youtube-Api-Key"),
     app_graph: Pregel = Depends(get_syllabus_graph) # Utilise le graphe de génération
 ):
     """
@@ -140,6 +141,8 @@ async def generate_syllabus(
     The client must then poll the status endpoint to get the result.
     """
     config = {"configurable": {"thread_id": thread_id}}
+
+    os.environ['YOUTUBE_API_KEY'] = x_youtube_api_key if x_youtube_api_key else os.getenv("YOUTUBE_API_KEY")
 
     async def run_generation_task():
         """
