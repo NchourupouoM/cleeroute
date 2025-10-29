@@ -115,8 +115,8 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
 async def search_and_filter_youtube_playlists(
     queries: List[str], 
     user_input: str,
-    max_candidates_per_query: int = 100,
-    max_final_playlists: int = 20
+    max_candidates_per_query: int = 50,
+    max_final_playlists: int = 10
 ) -> List[AnalyzedPlaylist]:
     """
     Performs a high-quality, multi-step search for YouTube playlists.
@@ -165,36 +165,43 @@ async def search_and_filter_youtube_playlists(
     # 2. TRIER TOUS LES CANDIDATS PAR DATE (la nouveauté d'abord)
     candidate_playlists.sort(key=lambda p: p['publishedAt'], reverse=True)
 
-    # On prend les 75 plus récents pour les envoyer au LLM (optimisation)
-    newest_candidates = candidate_playlists[:75]
-    print(f"--- Found {len(candidate_playlists)} total candidates. Selecting the 75 newest for LLM filtering. ---")
+    # On prend les 40 plus récents pour les envoyer au LLM (optimisation)
+    newest_candidates = candidate_playlists[:40]
+    print(f"--- Found {len(candidate_playlists)} total candidates. Selecting the 40 newest for LLM filtering. ---")
 
      # 3. Filtrage par le LLM (sur la liste des plus récents)
     candidates_str = json.dumps(newest_candidates, indent=2)
 
-    candidates_str = json.dumps(candidate_playlists, indent=2)
     prompt = Prompts.FILTER_YOUTUBE_PLAYLISTS.format(
         user_input=user_input,
         playlist_candidates=candidates_str
     )
     
+    selected_ids = []
     try:
         # On utilise 'with_structured_output' pour garantir une sortie JSON.
         # C'est la méthode la plus fiable.
         structured_llm = llm.with_structured_output(FilteredPlaylistSelection)
         
         # APPEL CORRECT AU LLM
-        llm_response = await structured_llm.ainvoke(prompt)
+        llm_response = await asyncio.wait_for(structured_llm.ainvoke(prompt), timeout=60.0)
         
-        selected_ids = []
         
-        selected_ids = llm_response.selected_ids
+        if llm_response and hasattr(llm_response, 'selected_ids'):
+            selected_ids = llm_response.selected_ids
+            print(f"--- LLM selected {len(selected_ids)} playlists: {selected_ids} ---")
+        else:
+            # Si llm_response est None ou n'a pas le bon attribut
+            print(f"--- WARNING: LLM filter step returned an invalid response or None. Proceeding without LLM filtering. ---")
+            # PLAN B : Si le LLM échoue, on prend les 5 playlists les plus récentes comme solution de repli
+            selected_ids = [p['id'] for p in newest_candidates[:5]]
+            print(f"--- Fallback: Selecting the 5 most recent playlists: {selected_ids} ---")
 
-        print(f"--- LLM selected {len(selected_ids)} playlists: {selected_ids} ---")
-
+    except asyncio.TimeoutError:
+        print(f"--- ERROR: LLM filter step timed out. Aborting search. ---")
+        return []
     except Exception as e:
-        # Attrape les erreurs de parsing JSON, les erreurs d'API, etc.
-        print(f"--- Error during LLM filter step: {e}. Aborting search. ---")
+        print(f"--- ERROR during LLM filter step: {e}. Aborting search. ---")
         return []
 
     # 3. Fetch full details (cette partie est correcte)

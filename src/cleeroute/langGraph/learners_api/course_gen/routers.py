@@ -13,13 +13,12 @@ from .models import (
     ContinueJourneyRequest, 
     JourneyStatusResponse
 )
-from src.cleeroute.db.checkpointer import get_checkpointer
+
 from .state import GraphState, PydanticSerializer
 from .dependencies import get_conversation_graph, get_syllabus_graph  # We will create this dependency injector
 
 # Create a new router instance
 # This allows us to group all related endpoints under a common prefix and tag
-checkpointer = get_checkpointer()
 syllabus_router = APIRouter()
 
 @syllabus_router.post(
@@ -30,7 +29,7 @@ syllabus_router = APIRouter()
 )
 async def start_learning_journey(
     request: SyllabusRequest,
-    x_youtube_api_key: Optional[str] = Header(None, alias="X-Gemini-Api-Key"),
+    x_youtube_api_key: Optional[str] = Header(None, alias="X-Youtube-Api-Key"),
     app_graph: Pregel = Depends(get_conversation_graph)  # Dependency injection for the graph
 ):
     """

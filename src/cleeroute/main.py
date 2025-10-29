@@ -14,7 +14,8 @@ from src.cleeroute.langGraph.streaming_project_content.test_streaming import pro
 from src.cleeroute.langGraph.streaming_course_structure.main_course import course_structure_router_stream
 from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import course_outline_router, course_subsections_router
 # from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
-from src.cleeroute.langGraph.learners_api.routers import syllabus_router
+from src.cleeroute.langGraph.learners_api.course_gen.routers import syllabus_router
+from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
 
@@ -187,6 +188,8 @@ app.include_router(project_content_router_stream, prefix="", tags=["Project cont
 # app.include_router(course_human_intervention_router, prefix="", tags=["Course structure update"])
 # ============================================================================================
 app.include_router(syllabus_router, prefix="", tags=["Syllabus Generators for Learners using youtube playlists"])
+# =============================================================================================
+app.include_router(updated_router, prefix="", tags=["Updated the learner choose path in the course structure"])
 
     
 if __name__ == "__main__":
