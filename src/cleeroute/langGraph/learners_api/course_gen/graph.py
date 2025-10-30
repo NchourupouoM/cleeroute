@@ -14,7 +14,7 @@ from .prompt import Prompts
 import asyncio
 from googleapiclient.discovery import build
 from .models import VideoInfo
-from .services import fetch_playlist_details, search_and_filter_youtube_playlists
+from .services import fetch_playlist_details, search_and_filter_youtube_playlists, classify_youtube_url, analyze_single_video
 # from .database import checkpointer
 from src.cleeroute.db.checkpointer import get_checkpointer
 import xml.etree.ElementTree as ET
@@ -87,15 +87,68 @@ async def generate_search_strategy(state: GraphState) -> dict:
 
     return {"search_queries": queries}
 
-async def fetch_learner_playlist(state: GraphState) -> dict:
-    """Fetches the playlist provided by the user, if any."""
-    print("--- Fetching User Playlist ---")
-    if state.get('user_input_link'):
-        playlist = await fetch_playlist_details(state['user_input_link'])
-        if playlist:
-            print(f"--- Fetched User Playlist: {playlist.playlist_title} ---")
-            return {"user_playlist_str": PydanticSerializer.dumps(playlist)}
-    return {}
+# async def fetch_learner_playlist(state: GraphState) -> dict:
+#     """Fetches the playlist provided by the user, if any."""
+#     print("--- Fetching User Playlist ---")
+#     if state.get('user_input_link'):
+#         playlist = await fetch_playlist_details(state['user_input_link'])
+#         if playlist:
+#             print(f"--- Fetched User Playlist: {playlist.playlist_title} ---")
+#             return {"user_playlist_str": PydanticSerializer.dumps(playlist)}
+#     return {}
+
+async def process_user_links_node(state: GraphState) -> dict:
+    """
+    Processes the list of user-provided links.
+    It classifies each URL and fetches its content concurrently.
+    It also creates a virtual playlist for single videos.
+    """
+    print("--- NODE: Processing User-Provided Links ---")
+    user_links = state.get('user_input_links', [])
+    if not user_links:
+        return {}
+
+    # 1. Créer les tâches en fonction du type d'URL
+    tasks = []
+    for link_str in user_links:
+        url_type = classify_youtube_url(link_str)
+        if url_type == 'playlist':
+            tasks.append(fetch_playlist_details(link_str))
+        elif url_type == 'video':
+            tasks.append(analyze_single_video(link_str))
+    
+    # 2. Exécuter en parallèle
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 3. Fusionner les résultats
+    user_playlists = []
+    single_videos = []
+    for res in results:
+        if isinstance(res, AnalyzedPlaylist):
+            user_playlists.append(res)
+        elif isinstance(res, VideoInfo):
+            single_videos.append(res)
+        elif isinstance(res, Exception):
+            print(f"--- WARNING: Failed to process a user link: {res} ---")
+
+    # 4. Créer la playlist virtuelle
+    if single_videos:
+        virtual_playlist = AnalyzedPlaylist(
+            playlist_title="Your Submitted Videos",
+            playlist_url="http://example.com/virtual-playlist",
+            videos=single_videos
+        )
+        user_playlists.insert(0, virtual_playlist)
+    
+    print(f"--- Successfully processed {len(user_playlists)} playlists from user links. ---")
+    
+    # On sérialise le résultat pour le stocker dans l'état
+    serialized_playlists = [PydanticSerializer.dumps(p) for p in user_playlists]
+    
+    # Ce nœud remplit directement 'merged_resources_str' car il n'y a pas d'autre source
+    return {"merged_resources_str": serialized_playlists}
+
+
 
 async def search_resources(state: GraphState) -> dict:
     """Searches YouTube for additional playlists using the advanced search and filter service."""
@@ -174,48 +227,116 @@ def should_continue_conversation(state: GraphState) -> Literal["continue_convers
 
 
 # --- NOUVEAU NŒUD 1: plan_syllabus ---
+# async def plan_syllabus(state: GraphState) -> dict:
+#     print("--- Planning the Syllabus Structure ---")
+    
+#     if not state.get('merged_resources_str'):
+#         return {"syllabus_blueprint_str": "No resources found."}
+    
+#     # On désérialise les données dont on a besoin
+#     metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
+#     merged_playlists_json_str = f"[{','.join(state['merged_resources_str'])}]"
+#     playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
+#     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
+    
+#     # Préparation du 'resources_summary'
+#     video_counter = 1
+#     # On crée une map ID -> VideoInfo pour plus tard
+#     video_details_map = {} 
+
+#     resources_summary = ""
+#     for p in playlists:
+#         resources_summary += f"\n--- Playlist: {p.playlist_title} ---\n"
+#         for video in p.videos:
+#             video_id = f"video_{video_counter}"
+#             resources_summary += f'  - Title: "{video.title}", URL: "{str(video.video_url)}" -Channel: "{video.channel_title}"\n'
+#             video_details_map[video_id] = video
+#             video_counter += 1
+            
+#     is_single_user_playlist = len(playlists) == 1 and state.get('user_input_link') is not None
+
+#     retry_count = state.get('blueprint_retries', 0)
+#     additional_instruction = ""
+#     if retry_count > 0:
+#         additional_instruction = (
+#             "\n**CRITICAL WARNING:** This is a retry attempt. Your previous attempt failed to produce a valid blueprint. "
+#             "You MUST strictly adhere to the 'MANDATORY BLUEPRINT STRUCTURE'. Double-check your output. "
+#             "A non-empty, fully-structured response is required."
+#         )
+
+#     prompt = Prompts.PLAN_SYLLABUS_WITH_PLACEHOLDERS.format(
+#         user_input=state['user_input_text'],
+#         conversation_summary=conversation_summary,
+#         resources_summary=resources_summary,
+#         is_single_user_playlist=is_single_user_playlist,
+#         metadata=metadata.model_dump_json(indent=2),
+#         retry_instruction=additional_instruction
+#     )
+    
+#     response = await llm.ainvoke(prompt)
+#     plan = response.content
+#     print("--- Syllabus Plan Created ---")
+    
+#     # On retourne le plan (qui est déjà une chaîne)
+#     return {"syllabus_blueprint_str": plan}
+
 async def plan_syllabus(state: GraphState) -> dict:
-    print("--- Planning the Syllabus Structure ---")
+    """
+    Generates a syllabus blueprint by iterating through each playlist and
+    calling the LLM once per playlist for maximum reliability.
+    """
+    print("--- Planning Syllabus Structure (Iterative Approach) ---")
     
-    if not state.get('merged_resources_str'):
-        return {"syllabus_blueprint_str": "No resources found."}
-    
-    # On désérialise les données dont on a besoin
-    metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
-    merged_playlists_json_str = f"[{','.join(state['merged_resources_str'])}]"
+    merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
+    if not merged_playlists_json_str or merged_playlists_json_str == "[]":
+        return {"syllabus_blueprint_str": ""} # Cas où il n'y a aucune ressource
+
+    # 1. Charger toutes les playlists
     playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
     
-    # Préparation du 'resources_summary'
-    video_counter = 1
-    # On crée une map ID -> VideoInfo pour plus tard
-    video_details_map = {} 
+    all_blueprints = []
 
-    resources_summary = ""
-    for p in playlists:
-        resources_summary += f"\n--- Playlist: {p.playlist_title} ---\n"
-        for video in p.videos:
-            video_id = f"video_{video_counter}"
-            resources_summary += f'  - Title: "{video.title}", URL: "{str(video.video_url)}" -Channel: "{video.channel_title}"\n'
-            video_details_map[video_id] = video
-            video_counter += 1
+    # 2. BOUCLER sur chaque playlist
+    for i, playlist in enumerate(playlists):
+        print(f"--- Generating blueprint for playlist {i+1}/{len(playlists)}: {playlist.playlist_title} ---")
+        
+        # Prépare un résumé des vidéos pour cette playlist uniquement
+        playlist_videos_summary = ""
+        for video in playlist.videos:
+            playlist_videos_summary += f'- "{video.title}"\n'
             
-    is_single_user_playlist = len(playlists) == 1 and state.get('user_input_link') is not None
+        # Logique de nouvelle tentative (inchangée)
+        retry_instruction = state.get("retry_instruction", "")
 
-    prompt = Prompts.PLAN_SYLLABUS_WITH_PLACEHOLDERS.format(
-        user_input=state['user_input_text'],
-        conversation_summary=conversation_summary,
-        resources_summary=resources_summary,
-        is_single_user_playlist=is_single_user_playlist,
-        metadata=metadata.model_dump_json(indent=2),
-    )
+        # 3. Appeler le LLM pour CETTE playlist
+        prompt = Prompts.PLAN_SYLLABUS_WITH_PLACEHOLDERS.format(
+            conversation_summary=conversation_summary,
+            playlist_title=playlist.playlist_title,
+            playlist_videos_summary=playlist_videos_summary,
+            retry_instruction=retry_instruction
+        )
+        
+        try:
+            response = await llm.ainvoke(prompt)
+            single_blueprint = response.content
+            
+            # Validation simple : on s'assure que le LLM n'a pas retourné une sortie vide
+            if single_blueprint and "--- COURSE START ---" in single_blueprint:
+                all_blueprints.append(single_blueprint)
+            else:
+                print(f"--- WARNING: LLM returned an empty or invalid blueprint for playlist: {playlist.playlist_title} ---")
+
+        except Exception as e:
+            print(f"--- ERROR generating blueprint for playlist {playlist.playlist_title}: {e} ---")
+            continue # On passe à la playlist suivante en cas d'erreur
+
+    # 4. Concaténer tous les blueprints générés
+    final_blueprint_str = "\n\n".join(all_blueprints)
     
-    response = await llm.ainvoke(prompt)
-    plan = response.content
-    print("--- Syllabus Plan Created ---")
-    
-    # On retourne le plan (qui est déjà une chaîne)
-    return {"syllabus_blueprint_str": plan}
+    print(f"--- All blueprints generated. Total length: {len(final_blueprint_str)} chars. ---")
+    return {"syllabus_blueprint_str": final_blueprint_str}
+
 
 # NŒUD 2 : RECHERCHE DE VIDÉOS-PROJETS
 async def find_and_search_project_videos(state: GraphState) -> dict:
@@ -267,83 +388,246 @@ async def find_and_search_project_videos(state: GraphState) -> dict:
     return {"found_project_videos_str": found_videos_json_str}
 
 
+# async def finalize_syllabus_json(state: GraphState) -> dict:
+#     """
+#     Assembles the final syllabus. This node takes the structured text blueprint,
+#     replaces placeholders with found project videos, and then instructs a final
+#     LLM to translate this completed plan into a valid JSON object.
+#     """
+#     print("--- Finalizing Syllabus JSON from Text Blueprint ---")
+
+#     # 1. Charger les données brutes depuis l'état
+#     blueprint_str = state.get('syllabus_blueprint_str', '')
+#     found_videos_str = state.get('found_project_videos_str', '{}')
+#     merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
+
+#     # 2. Vérifier si un plan valide a été créé
+#     if not blueprint_str or "No resources found" in blueprint_str:
+#         print("--- No valid blueprint to process. Returning empty syllabus. ---")
+#         empty_syllabus = SyllabusOptions(syllabi=[])
+#         return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
+
+#     # 3. Désérialiser les objets nécessaires
+#     found_videos = PydanticSerializer.loads(found_videos_str, Dict[str, VideoInfo])
+#     playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
+
+#     # 4. Construire la "Video Map" complète (Source de vérité pour toutes les URL)
+#     video_map = {}
+#     # Ajouter les vidéos des playlists originales
+#     for p in playlists:
+#         for video in p.videos:
+#             video_map[video.title] = {
+#                 "url": str(video.video_url),
+#                 "thumbnail_url": str(video.thumbnail_url) if video.thumbnail_url else None,
+#                 "channel_title": video.channel_title
+#             }
+#     # Ajouter les vidéos-projets trouvées
+#     for video in found_videos.values():
+#         video_map[video.title] = {
+#             "url": str(video.video_url),
+#             "thumbnail_url": str(video.thumbnail_url) if video.thumbnail_url else None,
+#             "channel_title": video.channel_title
+#         }
+    
+#     # 5. Finaliser le blueprint en remplaçant les placeholders (logique de texte simple)
+#     final_blueprint_str = blueprint_str
+#     for query, video in found_videos.items():
+#         placeholder_line = f'Placeholder: [SEARCH_FOR_PRACTICAL_VIDEO: "{query}"]'
+#         # On remplace la ligne du placeholder par une nouvelle ligne de sous-section complète
+#         replacement_line = (
+#             f"- Subsection Title: {video.title}\n"
+#             f"  Subsection Description: {video.description or 'A practical project video to apply the concepts of this section.'}"
+#         )
+#         final_blueprint_str = final_blueprint_str.replace(placeholder_line, replacement_line)
+
+#     # 6. Préparer les données pour le prompt de traduction
+#     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
+#     video_map_json_str = json.dumps(video_map, indent=2)
+
+#     prompt = Prompts.FINALIZE_SYLLABUS_JSON.format(
+#         conversation_summary=conversation_summary,
+#         final_syllabus_plan=final_blueprint_str,
+#         video_map=video_map_json_str
+#     )
+
+#     # 7. Appeler le LLM avec 'with_structured_output' pour une sortie garantie
+#     structured_llm = llm.with_structured_output(SyllabusOptions)
+#     try:
+#         syllabus_options = await structured_llm.ainvoke(prompt)
+        
+#         if not syllabus_options or not syllabus_options.syllabi:
+#             print("--- WARNING: Final LLM translation resulted in an empty syllabus. ---")
+#             syllabus_options = SyllabusOptions(syllabi=[])
+
+#         print("--- Final Syllabus JSON Generated Successfully ---")
+#         return {"final_syllabus_options_str": PydanticSerializer.dumps(syllabus_options)}
+#     except Exception as e:
+#         print(f"--- FATAL ERROR during final structured JSON generation: {e} ---")
+#         empty_syllabus = SyllabusOptions(syllabi=[])
+#         return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
+
+
+#blueprint validation
+def validate_blueprint_node(state: GraphState) -> dict:
+    """
+    Valide le blueprint généré. Ce nœud ne fait que vérifier la qualité.
+    """
+    print("--- Validating Syllabus Blueprint ---")
+    blueprint_str = state.get('syllabus_blueprint_str', '')
+    
+    # Critères de validation simples mais efficaces
+    if blueprint_str and "Course Title:" in blueprint_str and "Section Title:" in blueprint_str:
+        print("--- Blueprint is VALID. ---")
+        # On ne retourne rien de spécial, la validation passe
+        return {}
+    else:
+        print("--- Blueprint is INVALID or EMPTY. Incrementing retry counter. ---")
+        # On incrémente le compteur de tentatives
+        retries = state.get('blueprint_retries', 0) + 1
+        return {"syllabus_blueprint_str": "", "blueprint_retries": retries}
+
+def route_after_validation(state: GraphState) -> Literal["retry_planning", "proceed_to_projects"]:
+    """
+    Route le flux après la validation du blueprint.
+    """
+    retries = state.get('blueprint_retries', 0)
+    MAX_RETRIES = 2 # On se donne 2 chances (total de 3 tentatives)
+
+    if state.get('syllabus_blueprint_str'):
+        return "proceed_to_projects"
+    elif retries < MAX_RETRIES:
+        print(f"--- Attempt {retries + 1}. Retrying blueprint generation. ---")
+        return "retry_planning"
+    else:
+        print(f"--- FATAL: Max retries reached. Could not generate a valid blueprint. ---")
+        # On pourrait créer une branche d'erreur ici, mais pour l'instant on continue avec un plan vide
+        return "proceed_to_projects"
+    
+
+# sommarized descriptions in the generated blueprint 
+# async def summarize_blueprint_descriptions_node(state: GraphState) -> dict:
+    # """
+    # Takes the generated blueprint and uses a focused LLM call to summarize
+    # all subsection descriptions in a single batch operation.
+    # """
+    # print("--- Post-processing: Summarizing subsection descriptions ---")
+    # blueprint_str = state.get('syllabus_blueprint_str', '')
+# 
+    # Si le blueprint est vide, on ne fait rien pour économiser des tokens
+    # if not blueprint_str or "No resources found" in blueprint_str:
+        # return {}
+# 
+    # try:
+        # On prépare et on appelle le LLM dédié au résumé
+        # prompt = Prompts.BLUEPRINT_SUMMARIZER_PROMPT.format(blueprint_text=blueprint_str)
+        # response = await llm.ainvoke(prompt)
+        # summarized_blueprint = response.content
+        # 
+        # print("--- Descriptions summarized successfully. ---")
+        # 
+        # On écrase l'ancien blueprint avec la nouvelle version résumée
+        # return {"syllabus_blueprint_str": summarized_blueprint}
+    # 
+    # except Exception as e:
+        # print(f"--- WARNING: Could not summarize blueprint descriptions. Using original. Error: {e} ---")
+        # En cas d'erreur, on continue avec le blueprint non résumé pour ne pas bloquer le processus
+        # return {}
+
+
 async def finalize_syllabus_json(state: GraphState) -> dict:
     """
-    Assembles the final syllabus. This node takes the structured text blueprint,
-    replaces placeholders with found project videos, and then instructs a final
-    LLM to translate this completed plan into a valid JSON object.
+    Parses the text blueprint and assembles the final syllabus object using
+    reliable Python logic, without a final LLM call.
     """
-    print("--- Finalizing Syllabus JSON from Text Blueprint ---")
+    print("--- Finalizing Syllabus JSON from Text Blueprint (Python Parser) ---")
 
-    # 1. Charger les données brutes depuis l'état
     blueprint_str = state.get('syllabus_blueprint_str', '')
-    found_videos_str = state.get('found_project_videos_str', '{}')
-    merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
-
-    # 2. Vérifier si un plan valide a été créé
     if not blueprint_str or "No resources found" in blueprint_str:
-        print("--- No valid blueprint to process. Returning empty syllabus. ---")
-        empty_syllabus = SyllabusOptions(syllabi=[])
-        return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
+        print("--- No valid blueprint to process. ---")
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[]))}
 
-    # 3. Désérialiser les objets nécessaires
+    found_videos_str = state.get('found_project_videos_str', '{}')
     found_videos = PydanticSerializer.loads(found_videos_str, Dict[str, VideoInfo])
-    playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
-
-    # 4. Construire la "Video Map" complète (Source de vérité pour toutes les URL)
-    video_map = {}
-    # Ajouter les vidéos des playlists originales
-    for p in playlists:
-        for video in p.videos:
-            video_map[video.title] = {
-                "url": str(video.video_url),
-                "thumbnail_url": str(video.thumbnail_url) if video.thumbnail_url else None,
-                "channel_title": video.channel_title
-            }
-    # Ajouter les vidéos-projets trouvées
-    for video in found_videos.values():
-        video_map[video.title] = {
-            "url": str(video.video_url),
-            "thumbnail_url": str(video.thumbnail_url) if video.thumbnail_url else None,
-            "channel_title": video.channel_title
-        }
     
-    # 5. Finaliser le blueprint en remplaçant les placeholders (logique de texte simple)
+    # --- 1. Remplacer les placeholders dans le blueprint ---
     final_blueprint_str = blueprint_str
     for query, video in found_videos.items():
         placeholder_line = f'Placeholder: [SEARCH_FOR_PRACTICAL_VIDEO: "{query}"]'
-        # On remplace la ligne du placeholder par une nouvelle ligne de sous-section complète
-        replacement_line = (
-            f"- Subsection Title: {video.title}\n"
-            f"  Subsection Description: {video.description or 'A practical project video to apply the concepts of this section.'}"
-        )
+        replacement_line = f"- Subsection Title: {video.title}"
         final_blueprint_str = final_blueprint_str.replace(placeholder_line, replacement_line)
 
-    # 6. Préparer les données pour le prompt de traduction
-    conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
-    video_map_json_str = json.dumps(video_map, indent=2)
+    # --- 2. Construire la Video Map complète ---
+    video_map = {}
+    merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
+    playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
+    for p in playlists:
+        for video in p.videos:
+            video_map[video.title] = video
+    for video in found_videos.values():
+        video_map[video.title] = video
 
-    prompt = Prompts.FINALIZE_SYLLABUS_JSON.format(
-        conversation_summary=conversation_summary,
-        final_syllabus_plan=final_blueprint_str,
-        video_map=video_map_json_str
-    )
-
-    # 7. Appeler le LLM avec 'with_structured_output' pour une sortie garantie
-    structured_llm = llm.with_structured_output(SyllabusOptions)
+    # --- 3. Parser le blueprint textuel en une structure de données Python ---
     try:
-        syllabus_options = await structured_llm.ainvoke(prompt)
-        
-        if not syllabus_options or not syllabus_options.syllabi:
-            print("--- WARNING: Final LLM translation resulted in an empty syllabus. ---")
-            syllabus_options = SyllabusOptions(syllabi=[])
+        syllabi_list_of_dicts = []
+        # Sépare le blueprint en blocs de cours
+        course_blocks = final_blueprint_str.split("--- COURSE START ---")[1:]
 
-        print("--- Final Syllabus JSON Generated Successfully ---")
-        return {"final_syllabus_options_str": PydanticSerializer.dumps(syllabus_options)}
+        for course_text in course_blocks:
+            course_dict = {"title": "", "introduction": "", "tag": "", "sections": []}
+            
+            # Utilise des regex pour extraire les métadonnées du cours
+            course_title_match = re.search(r"Course Title: (.+)", course_text)
+            if course_title_match: course_dict["title"] = course_title_match.group(1).strip()
+            
+            intro_match = re.search(r"Course Introduction: (.+)", course_text)
+            if intro_match: course_dict["introduction"] = intro_match.group(1).strip()
+            
+            tag_match = re.search(r"Course Tag: (.+)", course_text)
+            if tag_match: course_dict["tag"] = tag_match.group(1).strip()
+
+            # Sépare le cours en sections et projets
+            parts = re.split(r"--- (SECTION|PROJECTS) START ---", course_text)
+            
+            # Parser les sections
+            section_blocks = re.findall(r"--- SECTION START ---(.+?)(?=--- SECTION START|--- PROJECTS START|--- COURSE END)", course_text, re.DOTALL)
+            for section_text in section_blocks:
+                section_dict = {"title": "", "description": "", "subsections": []}
+                
+                title_match = re.search(r"Section Title: (.+)", section_text)
+                if title_match: section_dict["title"] = title_match.group(1).strip()
+                
+                desc_match = re.search(r"Section Description: (.+)", section_text)
+                if desc_match: section_dict["description"] = desc_match.group(1).strip()
+                
+                subsection_matches = re.findall(r"- Subsection Title: (.+)", section_text)
+                for sub_title in subsection_matches:
+                    sub_title = sub_title.strip()
+                    video_data = video_map.get(sub_title)
+                    if video_data:
+                        section_dict["subsections"].append({
+                            "title": sub_title,
+                            "description": video_data.description or "",
+                            "video_url": str(video_data.video_url),
+                            "channel_title": video_data.channel_title,
+                            "thumbnail_url": str(video_data.thumbnail_url) if video_data.thumbnail_url else None
+                        })
+                course_dict["sections"].append(section_dict)
+
+            # (Logique de parsing des projets à ajouter ici si nécessaire)
+
+            syllabi_list_of_dicts.append(course_dict)
+
+        # --- 4. Valider la structure de données avec Pydantic ---
+        # Pydantic va convertir les dictionnaires en objets et valider les types
+        validated_syllabus = SyllabusOptions(syllabi=syllabi_list_of_dicts)
+        
+        print("--- Final Syllabus JSON Parsed and Validated Successfully ---")
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(validated_syllabus)}
+
     except Exception as e:
-        print(f"--- FATAL ERROR during final structured JSON generation: {e} ---")
-        empty_syllabus = SyllabusOptions(syllabi=[])
-        return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus)}
+        print(f"--- FATAL ERROR during Python blueprint parsing: {e} ---")
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[]))}
+
     
 # --- NOUVEAU NŒUD 2: generate_json_from_plan ---
 async def generate_json_from_plan(state: GraphState) -> dict:
@@ -395,9 +679,9 @@ def route_data_collection(state: GraphState) -> Literal["fetch_user_playlist", "
     This is the core of our new conditional logic.
     """
     print("--- Routing Data Collection Strategy ---")
-    if state.get("user_input_link"):
+    if state.get("user_input_links"):
         print("--- User link provided. Routing to 'fetch_user_playlist'. ---")
-        return "fetch_user_playlist"
+        return "process_user_links"
     else:
         print("--- No user link. Routing to 'search_new_playlists'. ---")
         return "search_new_playlists"
@@ -457,7 +741,9 @@ def create_syllabus_generation_graph():
     workflow.add_node("start_generation", start_generation)
 
     # nœuds
-    workflow.add_node("fetch_learner_playlist", fetch_learner_playlist)
+    # workflow.add_node("fetch_learner_playlist", fetch_learner_playlist)
+    workflow.add_node("process_user_links", process_user_links_node)
+
     workflow.add_node("generate_strategy", generate_search_strategy)
     workflow.add_node("search_resources", search_resources)
     workflow.add_node("merge_resources", merge_resources)
@@ -465,6 +751,9 @@ def create_syllabus_generation_graph():
     workflow.add_node("plan_syllabus", plan_syllabus)
     workflow.add_node("find_and_search_project_videos", find_and_search_project_videos)
     workflow.add_node("finalize_syllabus_json", finalize_syllabus_json)
+
+    # workflow.add_node("summarize_blueprint_descriptions", summarize_blueprint_descriptions_node)
+    workflow.add_node("validate_blueprint", validate_blueprint_node)
     
     # --- Arêtes ---
     workflow.set_entry_point("start_generation")
@@ -474,19 +763,34 @@ def create_syllabus_generation_graph():
         "start_generation", # Le point de départ de la décision
         route_data_collection, # La fonction qui prend la décision
         {
-            "fetch_user_playlist": "fetch_learner_playlist",
+            "process_user_links": "process_user_links",
             "search_new_playlists": "generate_strategy"
         }
     )
+
+    workflow.add_edge("process_user_links", "plan_syllabus")
     
     workflow.add_edge("generate_strategy", "search_resources")
-    workflow.add_edge("fetch_learner_playlist", "merge_resources")
+    # workflow.add_edge("fetch_learner_playlist", "merge_resources")
     workflow.add_edge("search_resources", "merge_resources")
 
     # workflow.add_edge("merge_resources", "synthesize_paths")
     # workflow.add_edge("synthesize_paths", END)
+    
     workflow.add_edge("merge_resources", "plan_syllabus")
-    workflow.add_edge("plan_syllabus", "find_and_search_project_videos")
+    # workflow.add_edge("plan_syllabus", "summarize_blueprint_descriptions")
+    workflow.add_edge("plan_syllabus", "validate_blueprint")
+
+    # strategie de retry apres echec de construction du syllabus 
+    workflow.add_conditional_edges(
+        "validate_blueprint",
+        route_after_validation,
+        {
+            "retry_planning": "plan_syllabus", # La boucle de réparation
+            "proceed_to_projects": "find_and_search_project_videos"
+        }
+    )
+
     workflow.add_edge("find_and_search_project_videos", "finalize_syllabus_json")
     workflow.add_edge("finalize_syllabus_json", END)
 

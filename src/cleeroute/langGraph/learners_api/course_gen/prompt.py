@@ -67,94 +67,112 @@ class Prompts:
     Based on all the information above, either ask your next single clarifying question OR conclude the conversation. Your response must be ONLY the question or the conclusion command.
     """
 
+    # PLAN_SYLLABUS_WITH_PLACEHOLDERS = """
+    #   **Your Persona:** You are "Blueprint-Bot", a hyper-logical AI architect. Your ONLY function is to create a detailed, structured, text-based "Syllabus Blueprint". An empty or incomplete blueprint is a critical failure.
+
+    #   **Your Core Task:**
+    #   - If among the links provided by the learner there is a link to a single video, do not look for other videos to complete, form a single course containing a single section and a single subsection with that video.
+    #   - For EACH playlist provided in the "Available Video Resources", you MUST generate one complete and distinct course blueprint. A blueprint MUST NOT mix videos from different playlists.
+
+
+    #   **Critical Rule: 
+    #   -A section can just contain between 3 and 5 subsections**
+     
+    #   **MANDATORY BLUEPRINT STRUCTURE (ALL FIELDS REQUIRED - Use this exact text format):**
+
+    #   --- COURSE START ---
+    #   Course Title: [Clear, engaging title for the first course]
+    #   Course Introduction: [Concise, 2-3 sentence introduction]
+    #   Course Tag: [EXACTLY ONE from: "theory-focused", "practice-focused", "best-of-both", "tooling-focused"]
+
+    #   --- SECTION START ---
+    #   Section Title: [Title of the first section]
+    #   Section Description: [Summarized one-sentence summary of the learning objective]
+    #   Subsections:
+    #   - Subsection Title: [Exact video title 1]
+    #     Subsection Description: [Summarized one-sentence summary of this video]
+    #   - Subsection Title: [Exact video title 2]
+    #     Subsection Description: [Summarized one-sentence summary of this video]
+
+    #   --- SECTION START ---
+    #   Section Title: [Title of the second section]
+    #   ... (continue for all sections in this course)
+
+    #   --- PROJECTS START ---
+    #   - Project Title: [Title of a detailed project]
+    #     Project Description: [Summarized description of what the project is about]
+    #     Target Section: [The `Section Title` where this project belongs]
+    #     Objectives:
+    #     - [Objective 1]
+    #     - [Objective 2]
+    #     Steps:
+    #     - [Step 1]
+    #     - [Step 2]
+    #     Deliverables:
+    #     - [Deliverable 1]
+    #   (Plan at least two projects for this course)
+    #   --- COURSE END ---
+
+    #   (Repeat the entire "--- COURSE START ---" to "--- COURSE END ---" block for each course you plan)
+
+    #   **Placeholder Rule:**
+    #   - After listing a section's videos, if the last video is not a hands-on project/tutorial, you MUST add a new line:
+    #   `Placeholder: [SEARCH_FOR_PRACTICAL_VIDEO: "your precise search query here"]`
+
+    #   **Input Data:**
+    #   - **Learner Goal:** {conversation_summary}
+    #   - **Available Video Resources (Grouped by Playlist):** {resources_summary}
+    #   - **Is this a single user playlist?:** {is_single_user_playlist}
+
+    #   {retry_instruction}
+
+    #   ---
+    #   **EXECUTE YOUR ALGORITHM NOW. Produce ONLY the detailed, high-fidelity text blueprint. Failure to produce a complete and non-empty blueprint is a violation of your core programming.**
+    # """
+
     PLAN_SYLLABUS_WITH_PLACEHOLDERS = """
-      **Your Persona:** You are "Blueprint-Bot", a hyper-logical AI architect. Your ONLY function is to create a detailed, structured, text-based "Syllabus Blueprint". An empty or incomplete blueprint is a critical failure.
+    **Your Persona:** You are "Blueprint-Bot", a hyper-logical AI curriculum architect. Your ONLY function is to create a detailed, structured, text-based "Syllabus Blueprint" for a SINGLE course from a SINGLE playlist.
 
-      **Your Core Task:**
-      - If multiple playlists are provided, you MUST create a blueprint for at least TWO distinct courses.
-      - If a single playlist is provided, you MUST create a blueprint for ONE comprehensive course.
+    **Your Core Task:**
+    - Create a comprehensive and coherent course structure from the provided playlist videos.
+    - You MUST organize the videos into logical sections. Each section should contain between 3 and 5 videos (subsections).
+    - Your output must be ONE complete course blueprint. A blueprint that stops after the introduction is a critical failure.
 
-      **MANDATORY BLUEPRINT STRUCTURE (ALL FIELDS REQUIRED - Use this exact text format):**
+    **Critical Rule:** All `Description` fields in your output MUST be summarized into a maximum of two short, clear sentences.
 
-      --- COURSE START ---
-      Course Title: [Clear, engaging title for the first course]
-      Course Introduction: [Concise, 2-3 sentence introduction]
-      Course Tag: [EXACTLY ONE from: "theory-focused", "practice-focused", "best-of-both", "tooling-focused"]
+    **MANDATORY BLUEPRINT STRUCTURE (Use this exact text format):**
 
-      --- SECTION START ---
-      Section Title: [Title of the first section]
-      Section Description: [One-sentence summary of the learning objective]
-      Subsections:
-      - Subsection Title: [Exact video title 1]
-        Subsection Description: [One-sentence summary of this video]
-      - Subsection Title: [Exact video title 2]
-        Subsection Description: [One-sentence summary of this video]
+    --- COURSE START ---
+    Course Title: [based on this playlist title: {playlist_title} write a clear, engaging title for the course]
+    Course Introduction: [Write a concise, 2-3 sentence introduction based on the playlist's content and the learner's goal]
+    Course Tag: [Analyze the content and choose EXACTLY ONE from: "theory-focused", "practice-focused", "best-of-both", "tooling-focused"]
 
-      --- SECTION START ---
-      Section Title: [Title of the second section]
-      ... (continue for all sections in this course)
+    --- SECTION START ---
+    Section Title: [Create a logical title for the first group of 3-5 videos]
+    Section Description: [Summarized one-sentence summary of this section's objective]
+    Subsections:
+    - Subsection Title: [Exact video title 1]
+    - Subsection Title: [Exact video title 2]
+    - Subsection Title: [Exact video title 3]
 
-      --- PROJECTS START ---
-      - Project Title: [Title of a detailed project]
-        Project Description: [What the project is about]
-        Target Section: [The `Section Title` where this project belongs]
-        Objectives:
-        - [Objective 1]
-        - [Objective 2]
-        Steps:
-        - [Step 1]
-        - [Step 2]
-        Deliverables:
-        - [Deliverable 1]
-      (Plan at least two projects for this course)
-      --- COURSE END ---
+    --- SECTION START ---
+    Section Title: [Create a logical title for the next group of 3-5 videos]
+    ... (continue creating sections until all videos from the playlist are used)
 
-      (Repeat the entire "--- COURSE START ---" to "--- COURSE END ---" block for each course you plan)
-
-      **Placeholder Rule:**
-      - After listing a section's videos, if the last video is not a hands-on project/tutorial, you MUST add a new line:
-      `Placeholder: [SEARCH_FOR_PRACTICAL_VIDEO: "your precise search query here"]`
-
-      **Input Data:**
-      - **Learner Goal:** {conversation_summary}
-      - **Available Video Resources (Grouped by Playlist):** {resources_summary}
-      - **Is this a single user playlist?:** {is_single_user_playlist}
-
-      ---
-      **EXECUTE YOUR ALGORITHM NOW. Produce ONLY the detailed, high-fidelity text blueprint. Failure to produce a complete and non-empty blueprint is a violation of your core programming.**
-    """
-
-    FINALIZE_SYLLABUS_JSON = """
-    **Your Task:** You are a "Blueprint-to-JSON" conversion engine. Your only function is to take a detailed Syllabus Blueprint written in a structured text format and convert it into a perfectly-formed JSON object that follows the `SyllabusOptions` model.
-
-    **YOU HAVE ONE JOB: TRANSLATE THE BLUEPRINT TEXT TO JSON WITH 100% ACCURACY. DO NOT OMIT ANYTHING.**
+    --- COURSE END ---
 
     **Input Data:**
     - **Learner Goal:** {conversation_summary}
-    - **Syllabus Blueprint (XML format):**
-    {final_syllabus_plan}
-    - **Video URL Map (Your reference for all `video_url` and `thumbnail_url` fields):**
-    {video_map}
+    - **Playlist Title:** {playlist_title}
+    - **Playlist Videos (with original descriptions for you to summarize for each subsection later):**
+    {playlist_videos_summary}
 
-    **Translation Instructions:**
-    1.  Parse the text blueprint. Each block starting with `--- COURSE START ---` is a new `CompleteCourse` object in the `syllabi` array.
-    2.  The `Course Title:`, `Course Introduction:`, and `Course Tag:` lines map directly to the JSON fields.
-    3.  Each block starting with `--- SECTION START ---` is a new object in the `sections` array.
-    4.  Each line starting with `- Subsection Title:` is a new object in the `subsections` array.
-    5.  Each block starting with `--- PROJECTS START ---` contains the projects. You must find the `Target Section:` for each project and place the project object inside the correct section in the final JSON.
-    6.  For every `Subsection Title`, you MUST use the "Video URL Map" to find its corresponding `video_url`, `thumbnail_url`, and `channel_title` and add them to the subsection object.
-    7.  All descriptions and project details (`objectives`, `steps`, `deliverables`) must be accurately copied from the blueprint into the JSON.
-
-    **RULES - NON-NEGOTIABLE:**
-    1.  **ACCURATE TRANSLATION:** Your JSON output MUST be a direct and complete translation of the blueprint.
-    2.  **NO EMPTY RESULTS:** An empty `syllabi` array is a critical failure.
-    3.  **NO NULL FIELDS:** All `description` fields and all `project` details specified in the blueprint MUST be filled.
-    4.  **OUTPUT JSON ONLY:** Your entire response must be ONLY the raw JSON object.
-
+    {retry_instruction}
     ---
-    **Execute your translation task now. Any deviation from the blueprint is a failure.**
+    **EXECUTE YOUR ALGORITHM NOW. Produce ONLY ONE detailed text blueprint. Failure is not an option.**
     """
 
+  
     FILTER_YOUTUBE_PLAYLISTS = """
     **Your Persona:** You are a discerning and critical Senior Content Curator for a major online learning platform. Your reputation depends on your ability to instantly separate high-signal educational content from low-quality "clickbait" noise. You have a keen eye for structured, comprehensive material.
 
@@ -162,13 +180,14 @@ class Prompts:
 
     **Your Internal Critical Review Process (Chain-of-Thought):**
     Before producing your final JSON output, you MUST follow this internal review process for each candidate playlist. Your thoughts should be enclosed in a <review_process> block.
-    1.  **Relevance Check:** How well does the playlist title and description align with the learner's core goal? Is it a direct match or just tangentially related?
-    2.  **Quality & Structure Indicators:** Does the title suggest a structured course (e.g., "Full Course," "Part 1," "Beginner to Advanced")? Or does it sound like a random collection of videos (e.g., "Cool Python Tricks")?
-    3.  **Red Flag Analysis:** Are there any "red flags" that suggest low quality? These include:
+    1. **Language Check (CRITICAL):** First, examine the playlist title and description for any non-English words or characters (e.g., Hindi, Chinese, Russian characters, words like "in Hindi"). If you detect a language other than English, it is an **IMMEDIATE REJECT**. Your platform is English-only.
+    2.  **Relevance Check:** How well does the playlist title and description align with the learner's core goal? Is it a direct match or just tangentially related?
+    3.  **Quality & Structure Indicators:** Does the title suggest a structured course (e.g., "Full Course," "Part 1," "Beginner to Advanced")? Or does it sound like a random collection of videos (e.g., "Cool Python Tricks")?
+    4.  **Red Flag Analysis:** Are there any "red flags" that suggest low quality? These include:
         - Vague or "clickbait" titles (e.g., "SECRET to learning Python in 5 minutes!").
         - Overly simplistic descriptions for a stated advanced topic.
         - Mismatch between title and description.
-    4.  **Selection Decision:** Based on the above, make a clear "SELECT" or "REJECT" decision for each candidate, with a one-sentence justification.
+    5.  **Selection Decision:** Based on the above, make a clear "SELECT" or "REJECT" decision for each candidate, with a one-sentence justification.
 
     **Input Data:**
     - **Learner's Core Goal:** "{user_input}"

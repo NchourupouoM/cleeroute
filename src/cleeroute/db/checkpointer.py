@@ -41,10 +41,16 @@ db_url = os.getenv("DATABASE_URL")
 if not db_url:
     raise ValueError("DATABASE_URL must be set in env")
 
+keepalive_args = "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5"
+# On ajoute les paramètres à l'URL de base, en gérant le cas où
+# il y a déjà des paramètres (? existant) ou non.
+separator = '&' if '?' in db_url else '?'
+db_url_with_keepalives = f"{db_url}{separator}{keepalive_args}"
+
 # Le pool de connexions asynchrone est configuré pour être robuste
 # aux timeouts réseau des services cloud comme Azure.
 db_pool = AsyncConnectionPool(
-    conninfo=db_url, 
+    conninfo=db_url_with_keepalives, 
     open=False, # Important: Le cycle de vie est géré par le 'lifespan' de FastAPI
     max_size=20,
     # Timeout pour obtenir une connexion du pool (en secondes)
@@ -72,8 +78,8 @@ def get_checkpointer() -> AsyncPostgresSaver:
     Doit être appelé une fois par graphe.
     """
     return AsyncPostgresSaver(
-        conn=db_pool, # Il est plus robuste de passer conninfo que le pool
-        serde=PickleSerde()
+        conn=db_pool, 
+        serde=PickleSerde
     )
 
 

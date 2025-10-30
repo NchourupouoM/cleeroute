@@ -10,8 +10,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from .models import AnalyzedPlaylist, VideoInfo, FilteredPlaylistSelection
 from .prompt import Prompts
-
+from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
+import re
 load_dotenv()
 
 # It's good practice to initialize the LLM and YouTube service once
@@ -23,6 +24,24 @@ if not YOUTUBE_API_KEY:
     raise ValueError("YOUTUBE_API_KEY must be set in env")
 
 youtube_service = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+
+
+def classify_youtube_url(url: str) -> str:
+    """
+    Classifies a YouTube URL as 'playlist', 'video', or 'unknown'.
+    """
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+
+    # Une URL est une playlist si elle contient le paramètre 'list'
+    if 'list' in query_params:
+        return 'playlist'
+    
+    # Une URL est une vidéo si elle contient le paramètre 'v' ou si c'est une URL courte youtu.be
+    if 'v' in query_params or parsed_url.hostname == 'youtu.be':
+        return 'video'
+        
+    return 'unknown'
 
 
 async def fetch_playlist_details(playlist_url: str) -> Optional[AnalyzedPlaylist]:
@@ -217,3 +236,71 @@ async def search_and_filter_youtube_playlists(
             
     print(f"--- Successfully fetched details for {len(final_playlists)} final playlists. ---")
     return final_playlists
+
+YOUTUBE_URL_REGEX = re.compile(
+    r"(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})"
+)
+
+def get_video_id_from_url(url: str) -> Optional[str]:
+    """
+    Extracts the YouTube video ID from various URL formats using a pre-compiled regex.
+    """
+    match = YOUTUBE_URL_REGEX.search(url)
+    return match.group(1) if match else None
+
+async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
+    """
+    Analyzes a single user-provided YouTube video URL.
+    Fetches its details like title, description, channel, and thumbnail.
+    This function is designed to be called concurrently with other async tasks.
+    """
+    video_id = get_video_id_from_url(video_url)
+    if not video_id:
+        print(f"--- WARNING: Could not extract video ID from URL: {video_url} ---")
+        return None
+
+    print(f"--- Analyzing single video (ID: {video_id}) ---")
+    
+    try:
+        # 1. Créer la requête de manière synchrone
+        video_request = youtube_service.videos().list(
+            part="snippet,contentDetails",
+            id=video_id
+        )
+        
+        # 2. Exécuter la requête bloquante dans un thread séparé pour ne pas geler l'application
+        video_response = await asyncio.to_thread(video_request.execute)
+        
+        if not video_response.get("items"):
+            print(f"--- WARNING: Video with ID {video_id} not found or is private. Skipping. ---")
+            return None
+        
+        # 3. Extraire les métadonnées de la réponse
+        item = video_response["items"][0]
+        snippet = item["snippet"]
+        
+        # Sélection de la meilleure miniature disponible
+        thumbnails = snippet.get("thumbnails", {})
+        thumbnail_url = (
+            thumbnails.get("maxres", {}) or
+            thumbnails.get("standard", {}) or
+            thumbnails.get("high", {}) or
+            thumbnails.get("medium", {}) or
+            thumbnails.get("default", {})
+        ).get("url")
+
+        # 4. Construire et retourner l'objet Pydantic
+        return VideoInfo(
+            title=snippet.get("title", "No Title Provided"),
+            description=snippet.get("description"),
+            video_url=f"https://www.youtube.com/watch?v={video_id}",
+            channel_title=snippet.get("channelTitle"),
+            thumbnail_url=thumbnail_url
+        )
+        
+    except HttpError as e:
+        print(f"--- ERROR (HttpError) analyzing video {video_id}: {e} ---")
+        return None
+    except Exception as e:
+        print(f"--- ERROR (Unexpected) analyzing video {video_id}: {e} ---")
+        return None

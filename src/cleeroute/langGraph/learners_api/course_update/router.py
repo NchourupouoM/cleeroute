@@ -21,8 +21,6 @@ async def start_modification(
     Démarre une nouvelle session de modification de cours.
     Crée un nouveau thread et exécute le graphe jusqu'à la première interruption.
     """
-
-
     # 3. Création d'un NOUVEAU thread_id pour cette session de modification
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}

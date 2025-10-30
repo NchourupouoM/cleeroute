@@ -41,9 +41,14 @@ async def start_learning_journey(
 
     os.environ['YOUTUBE_API_KEY'] = x_youtube_api_key if x_youtube_api_key else os.getenv("YOUTUBE_API_KEY")
 
+    user_links_str = []
+    if request.user_input_links:
+        # On convertit la liste de HttpUrl en une liste de chaînes de caractères
+        user_links_str = [str(link) for link in request.user_input_links]
+
     initial_state = GraphState(
         user_input_text=request.user_input_text,
-        user_input_link=str(request.user_input_link) if request.user_input_link else None,
+        user_input_links=user_links_str,
         metadata_str=PydanticSerializer.dumps(request.metadata)
     )
 
@@ -192,7 +197,11 @@ async def get_journey_status(
 ):
     config = {"configurable": {"thread_id": thread_id}}
 
-    snapshot = await app_graph.aget_state(config)
+    try:
+        # aget_state peut lever une exception si le thread n'existe pas
+        snapshot = await app_graph.aget_state(config)
+    except Exception:
+        snapshot = None
 
     if not snapshot:
         raise HTTPException(status_code=404, detail="Journey not found.")

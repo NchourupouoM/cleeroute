@@ -66,7 +66,10 @@ class Course_meta_datas(BaseModel):
 
 class SyllabusRequest(BaseModel):
     user_input_text: str = Field(..., min_length=10)
-    user_input_link: Optional[HttpUrl] = None
+    user_input_links: Optional[List[HttpUrl]] = Field(
+        None, 
+        description="A list of YouTube URLs (can be playlists or single videos)."
+    )
     metadata: Course_meta_datas
 
 # --------------------------

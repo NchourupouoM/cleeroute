@@ -51,7 +51,7 @@ def _overwrite(left: Any, right: Any) -> Any:
 class GraphState(TypedDict):
     # --- Inputs ---
     user_input_text: Annotated[str, _overwrite] # Stored as str
-    user_input_link: Annotated[Optional[str], _overwrite] # Stored as string
+    user_input_links: Annotated[Optional[List[str]], _overwrite] # Stored as string
     metadata_str: Annotated[str, _overwrite] # Stored as str # Serialized Course_meta_datas
 
     # --- Conversation / HITL ---
@@ -71,4 +71,6 @@ class GraphState(TypedDict):
     
     # --- Final Output ---
     final_syllabus_options_str: Annotated[Optional[str], _overwrite]
+
+    blueprint_retries: int
 

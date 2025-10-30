@@ -133,7 +133,7 @@ class StartModificationRequest(BaseModel):
                         "description": "This section covers conditional rendering in React.",
                         "subsections": [
                         {
-                            "title": "How to CONDITIONAL RENDER in React ❓",
+                            "title": "How to CONDITIONAL RENDER in React ?",
                             "description": "This video explains how to conditionally render elements in React.",
                             "video_url": "https://www.youtube.com/watch?v=XvURBpFxdGw",
                             "thumbnail_url": "https://i.ytimg.com/vi/XvURBpFxdGw/hqdefault.jpg",
