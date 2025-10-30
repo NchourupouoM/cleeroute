@@ -1,6 +1,6 @@
 from .prompt import *
 from langchain_google_genai import ChatGoogleGenerativeAI
-from .model import ModificationGraphState, RemoveParams, AddParams, ReplaceParams, ClarifyParams, FinalizeParams, ActionClassifier
+from .model import ModificationGraphState,UpdateCourseIntroParams,UpdateCourseTitleParams,RemoveSectionParams,AddSectionParams, RemoveSubsectionParams,AddSubsectionParams,ReplaceSubsectionParams,ClarifyParams,FinalizeParams, ActionClassifier
 from langgraph.graph import StateGraph, END
 from src.cleeroute.langGraph.learners_api.course_gen.models import Section, Subsection,CompleteCourse,AnalyzedPlaylist
 from src.cleeroute.langGraph.learners_api.course_gen.services import search_and_filter_youtube_playlists
@@ -32,7 +32,7 @@ def plan_modification_node(state: ModificationGraphState) -> ModificationGraphSt
         # On force une clarification pour éviter un crash.
         plan_dict = {
             "action": "CLARIFY",
-            "parameters": {"question_to_user": "Je rencontre une difficulté technique avec la structure du cours. Pouvez-vous recommencer le processus de modification ?"}
+            "parameters": {"question_to_user": "I'm having a technical difficulty with the course structure. Could you please restart the editing process?"}
         }
         return {"modification_plan": plan_dict}
     
@@ -51,14 +51,17 @@ def plan_modification_node(state: ModificationGraphState) -> ModificationGraphSt
     
     print(f"Step 1 - Classified Action: {action_name}")
 
-    # --- STEP 2: GENERATE PARAMETERS FOR THE ACTION ---
-    
+    # --- ÉTAPE 2: GÉNÉRATION DES PARAMÈTRES (avec les nouveaux modèles) ---
     param_model_map = {
-        "REMOVE": (RemoveParams, "Generate parameters to remove a section. Identify the exact section title to be removed."),
-        "ADD": (AddParams, "Generate parameters to add a new section. Identify the topic to add and create a YouTube search query."),
-        "REPLACE": (ReplaceParams, "Generate parameters to replace a section. Identify the section to replace, the new topic, and a search query."),
-        "CLARIFY": (ClarifyParams, "Generate a question to ask the user for clarification."),
-        "FINALIZE": (FinalizeParams, "Generate a final confirmation message for the user.")
+        "UPDATE_COURSE_TITLE": (UpdateCourseTitleParams, "Extract the new title for the entire course."),
+        "UPDATE_COURSE_INTRODUCTION": (UpdateCourseIntroParams, "Extract the new introduction for the course."),
+        "REMOVE_SECTION": (RemoveSectionParams, "Extract the exact title of the SECTION to remove."),
+        "ADD_SECTION": (AddSectionParams, "Extract the topic for a NEW section and generate a search query."),
+        "REMOVE_SUBSECTION": (RemoveSubsectionParams, "Extract the SECTION title and the SUBSECTION title to remove."),
+        "ADD_SUBSECTION": (AddSubsectionParams, "Extract the target SECTION title, the new SUBSECTION topic, and a search query."),
+        "REPLACE_SUBSECTION": (ReplaceSubsectionParams, "Extract the target SECTION and SUBSECTION, the new topic, and a search query."),
+        "CLARIFY": (ClarifyParams, "..."),
+        "FINALIZE": (FinalizeParams, "...")
     }
     
     ParamModel, instruction = param_model_map[action_name]
@@ -87,39 +90,87 @@ def plan_modification_node(state: ModificationGraphState) -> ModificationGraphSt
     return {"modification_plan": plan_dict}
 
 
-def execute_remove_node(state: ModificationGraphState) -> ModificationGraphState:
+def execute_direct_modification_node(state: ModificationGraphState) -> ModificationGraphState:
     """
-    Exécute l'action REMOVE en utilisant une discipline de sérialisation stricte.
+    Exécute toutes les modifications directes sur la structure du cours.
+    Ce nœud gère les mises à jour de titre/introduction et les suppressions 
+    de sections ou de sous-sections. Il ne nécessite pas de recherche externe.
     """
-    print("--- NODE: Exécution de la suppression (Final) ---")
+    print("--- NODE: Executing Direct Modification ---")
     plan = state["modification_plan"]
-    section_to_remove = plan["parameters"].get("section_title")
+    action = plan.get("action")
+    params = plan.get("parameters", {})
     
-    if not section_to_remove:
-        return {"operation_report": "FAILURE: The action plan was invalid. Missing 'section_title'."}
+    # CHARGEMENT : On charge le dictionnaire de l'état dans un objet Pydantic
+    try:
+        working_course_obj = CompleteCourse(**state["working_course"])
+    except Exception as e:
+        report = f"FAILURE: Could not load the course structure from the current state. Error: {e}"
+        print(f"Operation Report: {report}")
+        # On ne peut rien faire si le cours ne peut être chargé, on retourne l'état actuel
+        return {"operation_report": report}
 
-    # 1. CHARGEMENT : Convertit le dict de l'état en objet Pydantic
-    working_course_obj = CompleteCourse(**state["working_course"])
+    report = f"FAILURE: Unknown or unimplemented direct modification action '{action}'."
+
+    try:
+        # --- ACTION: Mettre à jour le titre du cours ---
+        if action == "UPDATE_COURSE_TITLE":
+            new_title = params["new_title"]
+            working_course_obj.title = new_title
+            report = f"SUCCESS: The course title has been updated to '{new_title}'."
+
+        # --- ACTION: Mettre à jour l'introduction du cours ---
+        elif action == "UPDATE_COURSE_INTRODUCTION":
+            new_introduction = params["new_introduction"]
+            working_course_obj.introduction = new_introduction
+            report = f"SUCCESS: The course introduction has been updated."
+
+        # --- ACTION: Supprimer une section entière ---
+        elif action == "REMOVE_SECTION":
+            title_to_remove = params["section_title"]
+            original_count = len(working_course_obj.sections)
+            working_course_obj.sections = [s for s in working_course_obj.sections if s.title != title_to_remove]
+            
+            if len(working_course_obj.sections) < original_count:
+                report = f"SUCCESS: The section titled '{title_to_remove}' was removed."
+            else:
+                current_titles = [s.title for s in working_course_obj.sections]
+                report = f"FAILURE: Could not find a section titled '{title_to_remove}'. Available sections are: {current_titles}."
+        
+        # --- ACTION: Supprimer une sous-section (vidéo) ---
+        elif action == "REMOVE_SUBSECTION":
+            section_title = params["section_title"]
+            subsection_title = params["subsection_title"]
+            
+            section_found = False
+            for section in working_course_obj.sections:
+                if section.title == section_title:
+                    section_found = True
+                    original_subsection_count = len(section.subsections)
+                    # Filtre les sous-sections pour enlever celle qui est ciblée
+                    section.subsections = [ss for ss in section.subsections if ss.title != subsection_title]
+                    
+                    if len(section.subsections) < original_subsection_count:
+                        report = f"SUCCESS: The video '{subsection_title}' was removed from the section '{section_title}'."
+                    else:
+                        current_sub_titles = [ss.title for ss in section.subsections]
+                        report = f"FAILURE: Could not find a video titled '{subsection_title}' in the section '{section_title}'. Available videos are: {current_sub_titles}."
+                    break # On arrête de chercher une fois la bonne section trouvée et modifiée
+            
+            if not section_found:
+                current_titles = [s.title for s in working_course_obj.sections]
+                report = f"FAILURE: Could not find the target section '{section_title}'. Available sections are: {current_titles}."
+
+    except KeyError as e:
+        report = f"FAILURE: The action plan was missing a required parameter '{e}' for the action '{action}'."
     
-    original_count = len(working_course_obj.sections)
+    print(f"Operation Report: {report}")
     
-    # 2. TRAVAIL : Modifie l'objet Pydantic
-    working_course_obj.sections = [sec for sec in working_course_obj.sections if sec.title != section_to_remove]
-    
-    if len(working_course_obj.sections) < original_count:
-        report = f"SUCCESS: The section titled '{section_to_remove}' was successfully removed."
-    else:
-        current_titles = [s.title for s in working_course_obj.sections]
-        report = f"FAILURE: A section titled '{section_to_remove}' could not be found. Current sections are: {current_titles}"
-    
-    print(f"Rapport d'opération : {report}")
-    
-    # 3. SAUVEGARDE : Reconvertit l'objet modifié en dict JSON-compatible
+    # SAUVEGARDE : On reconvertit l'objet Pydantic modifié en dictionnaire JSON-compatible
     return {
         "working_course": working_course_obj.model_dump(mode='json'),
         "operation_report": report
     }
-
 
 async def execute_search_node(state: ModificationGraphState) -> ModificationGraphState:
     """
@@ -131,7 +182,7 @@ async def execute_search_node(state: ModificationGraphState) -> ModificationGrap
     query = plan["parameters"].get("youtube_search_query")
     
     if not query:
-        return {"message_to_user": "Plan invalide. La requête de recherche est manquante."}
+        return {"message_to_user": "Invalid plan. The search query is missing."}
     
     try:
         # On a besoin du contexte du cours original
@@ -166,49 +217,53 @@ async def execute_search_node(state: ModificationGraphState) -> ModificationGrap
 
 def route_after_planning(state: ModificationGraphState) -> str:
     """
-    Lit le 'modification_plan' et décide quel nœud exécuter ensuite.
+    Lit le plan d'action granulaire et route vers le bon type d'exécution.
     """
     plan = state.get("modification_plan")
     if not plan:
-        return END # Sécurité en cas de plan manquant
+        return END
 
     action = plan.get("action")
-    print(f"Routage de l'action : {action}")
+    print(f"Routing Granular Action: {action}")
 
-    if action == "REMOVE":
-        return "execute_remove"
-    elif action == "ADD" or action == "REPLACE":
-        # Pour ADD et REPLACE, on doit d'abord chercher des ressources
-        return "execute_search"
+    # Actions qui modifient la structure (supprimer, mettre à jour)
+    if action in ["UPDATE_COURSE_TITLE", "UPDATE_COURSE_INTRODUCTION", "REMOVE_SECTION", "REMOVE_SUBSECTION"]:
+        return "execute_direct_modification" # Un seul nœud pour les modifications directes
+
+    # Actions qui nécessitent une recherche de contenu externe
+    elif action in ["ADD_SECTION", "ADD_SUBSECTION", "REPLACE_SUBSECTION"]:
+        return "execute_search" # Le flux de recherche reste le même
+
+    # Actions de service
     elif action == "CLARIFY":
         return "execute_clarify"
     elif action == "FINALIZE":
         return "execute_finalize"
     else:
-        # Si l'action est inconnue, on termine pour éviter une boucle infinie
         return END
 
 def apply_add_replace_node(state: ModificationGraphState) -> ModificationGraphState:
     """
-    Applique ADD/REPLACE en utilisant une discipline de sérialisation stricte.
+    Applique les résultats d'une recherche pour les actions ADD et REPLACE
+    au niveau de la section ou de la sous-section.
     """
-    print("--- NODE: Application de l'ajout/remplacement (Final) ---")
+    print("--- NODE: Applying Add/Replace from Search ---")
     plan = state["modification_plan"]
+    action = plan["action"]
+    params = plan["parameters"]
     new_resources_dicts = state.get("newly_found_resources")
+    
+    working_course_obj = CompleteCourse(**state["working_course"])
+    report = f"FAILURE: Unknown add/replace action '{action}'."
 
     # 1. CHARGEMENT du cours
     working_course_obj = CompleteCourse(**state["working_course"])
 
     if not new_resources_dicts:
-        report = f"FAILURE: The search for '{plan['parameters'].get('youtube_search_query')}' did not return any usable video playlists."
-        return {
-            "working_course": working_course_obj.model_dump(mode='json'),
-            "operation_report": report
-        }
+        report = f"FAILURE: The search for '{params.get('youtube_search_query')}' did not return any usable video playlists."
+        return { "working_course": working_course_obj.model_dump(mode='json'), "operation_report": report }
 
-    chosen_playlist_dict = new_resources_dicts[0]
-    # CHARGEMENT de la playlist
-    chosen_playlist_obj = AnalyzedPlaylist(**chosen_playlist_dict)
+    chosen_playlist_obj = AnalyzedPlaylist(**new_resources_dicts[0])
 
     print("--- Résumé des descriptions par le LLM ---")
     
@@ -242,36 +297,56 @@ def apply_add_replace_node(state: ModificationGraphState) -> ModificationGraphSt
                 thumbnail_url=str(video.thumbnail_url) if video.thumbnail_url else None
             )
         )
-    
-    # 2. TRAVAIL
-    new_section = Section(
-        title=plan["parameters"].get("topic_to_add") or plan["parameters"].get("new_topic", chosen_playlist_obj.playlist_title),
-        description=summarized_section_description,
-        subsections=summarized_subsections
-    )
 
-    if plan["action"] == "ADD":
-        working_course_obj.sections.append(new_section)
-    elif plan["action"] == "REPLACE":
-        section_to_replace = plan["parameters"].get("section_to_replace")
-        index_to_replace = -1
-        for i, sec in enumerate(working_course_obj.sections):
-            if sec.title == section_to_replace:
-                index_to_replace = i
-                break
-        if index_to_replace != -1:
-            working_course_obj.sections[index_to_replace] = new_section
-        else:
+    try:
+        if action == "ADD_SECTION":
+            new_section = Section(title=params["topic_to_add"], description=summarized_section_description, subsections=summarized_subsections)
             working_course_obj.sections.append(new_section)
+            report = f"SUCCESS: Section '{new_section.title}' was added."
 
-    report = f"SUCCESS: The action '{plan['action']}' was completed for the topic '{new_section.title}'."
-    
-    # 3. SAUVEGARDE
+        elif action in ["ADD_SUBSECTION", "REPLACE_SUBSECTION"]:
+            # Pour ces actions, on ne prend que la PREMIÈRE vidéo de la playlist trouvée
+            if not summarized_subsections:
+                 raise ValueError("Search returned a playlist with no videos.")
+            
+            new_subsection = summarized_subsections[0]
+            
+            target_section_title = params["section_title"] if action == "ADD_SUBSECTION" else params["section_to_replace"]
+            
+            section_found = False
+            for section in working_course_obj.sections:
+                if section.title == target_section_title:
+                    section_found = True
+                    if action == "ADD_SUBSECTION":
+                        section.subsections.append(new_subsection)
+                        report = f"SUCCESS: Subsection '{new_subsection.title}' was added to section '{target_section_title}'."
+                    
+                    elif action == "REPLACE_SUBSECTION":
+                        target_sub_title = params["subsection_title"]
+                        sub_index = -1
+                        for i, sub in enumerate(section.subsections):
+                            if sub.title == target_sub_title:
+                                sub_index = i
+                                break
+                        if sub_index != -1:
+                            section.subsections[sub_index] = new_subsection
+                            report = f"SUCCESS: Subsection '{target_sub_title}' was replaced with '{new_subsection.title}' in section '{target_section_title}'."
+                        else:
+                            report = f"FAILURE: Target subsection '{target_sub_title}' not found in section '{target_section_title}'."
+                    break
+            if not section_found:
+                report = f"FAILURE: Target section '{target_section_title}' not found."
+
+    except (KeyError, ValueError) as e:
+        report = f"FAILURE: Missing data or parameter for action '{action}': {e}"
+
+    print(f"Operation Report: {report}")
     return {
         "working_course": working_course_obj.model_dump(mode='json'),
         "operation_report": report,
         "newly_found_resources": None
     }
+
 
 
 def execute_clarify_node(state: ModificationGraphState) -> ModificationGraphState:
@@ -292,7 +367,7 @@ def execute_finalize_node(state: ModificationGraphState) -> ModificationGraphSta
     """Finalise la session de modification."""
     print("--- NODE: Finalisation de la session ---")
     plan = state["modification_plan"]
-    message = plan["parameters"].get("final_message", "Voici votre cours finalisé !")
+    message = plan["parameters"].get("final_message", "here is the final course !")
     
     return {
         "message_to_user": message, 
@@ -337,7 +412,7 @@ def build_modification_graph():
 
     # 1. Ajout de TOUS les nœuds, y compris le nouveau
     workflow.add_node("plan_modification", plan_modification_node)
-    workflow.add_node("execute_remove", execute_remove_node)
+    workflow.add_node("execute_direct_modification", execute_direct_modification_node)
     workflow.add_node("execute_search", execute_search_node)
     workflow.add_node("apply_add_replace", apply_add_replace_node) # NOUVEAU
     workflow.add_node("execute_clarify", execute_clarify_node)
@@ -351,7 +426,7 @@ def build_modification_graph():
         "plan_modification",
         route_after_planning,
         {
-            "execute_remove": "execute_remove",
+            "execute_direct_modification": "execute_direct_modification",
             "execute_search": "execute_search",
             "execute_clarify": "execute_clarify",
             "execute_finalize": "execute_finalize",
@@ -359,16 +434,17 @@ def build_modification_graph():
         }
     )
 
-    workflow.add_edge("execute_remove", "generate_user_message")
+    workflow.add_edge("execute_direct_modification", "generate_user_message")
+
+    # NOUVELLE arête : après la recherche, on applique les modifications
+    workflow.add_edge("execute_search", "apply_add_replace")
+    
     workflow.add_edge("apply_add_replace", "generate_user_message")
     workflow.add_edge("generate_user_message", END)
 
     workflow.add_edge("execute_clarify", END)
     workflow.add_edge("execute_finalize", END)
     
-    # NOUVELLE arête : après la recherche, on applique les modifications
-    workflow.add_edge("execute_search", "apply_add_replace")
-
     # 4. Compilation (inchangée)
     graph = workflow.compile(checkpointer=checkpointer)
     return graph

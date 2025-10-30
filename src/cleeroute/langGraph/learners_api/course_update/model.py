@@ -208,23 +208,58 @@ class ModificationResponse(BaseModel):
         description="Passe à 'True' uniquement lorsque l'utilisateur a confirmé que le cours est terminé."
     )
 
+# class RemoveParams(BaseModel):
+#     section_title: str = Field(..., description="Le titre EXACT de la section à supprimer.")
+
+# class AddParams(BaseModel):
+#     topic_to_add: str = Field(..., description="Un titre concis pour la nouvelle section à ajouter.")
+#     youtube_search_query: str = Field(..., description="Une requête de recherche YouTube efficace pour ce nouveau sujet.")
+
+# class ReplaceParams(BaseModel):
+#     section_to_replace: str = Field(..., description="Le titre EXACT de la section à remplacer.")
+#     new_topic: str = Field(..., description="Le nouveau sujet qui remplacera l'ancien.")
+#     youtube_search_query: str = Field(..., description="Une requête de recherche YouTube pour le nouveau sujet.")
+
+
+# class ActionClassifier(BaseModel):
+#     action: Literal["REMOVE", "ADD", "REPLACE", "CLARIFY", "FINALIZE"]
 
 
 
 
+# --- Définition des "coordonnées" pour cibler un élément ---
+class SectionIdentifier(BaseModel):
+    section_title: str = Field(..., description="Le titre EXACT de la section cible.")
 
+class SubsectionIdentifier(SectionIdentifier):
+    subsection_title: str = Field(..., description="Le titre EXACT de la sous-section (vidéo) cible.")
 
-class RemoveParams(BaseModel):
-    section_title: str = Field(..., description="Le titre EXACT de la section à supprimer.")
+# Actions au niveau du cours
+class UpdateCourseTitleParams(BaseModel):
+    new_title: str
 
-class AddParams(BaseModel):
-    topic_to_add: str = Field(..., description="Un titre concis pour la nouvelle section à ajouter.")
-    youtube_search_query: str = Field(..., description="Une requête de recherche YouTube efficace pour ce nouveau sujet.")
+class UpdateCourseIntroParams(BaseModel):
+    new_introduction: str
 
-class ReplaceParams(BaseModel):
-    section_to_replace: str = Field(..., description="Le titre EXACT de la section à remplacer.")
-    new_topic: str = Field(..., description="Le nouveau sujet qui remplacera l'ancien.")
-    youtube_search_query: str = Field(..., description="Une requête de recherche YouTube pour le nouveau sujet.")
+# Actions au niveau de la section
+class RemoveSectionParams(SectionIdentifier):
+    pass
+
+class AddSectionParams(BaseModel):
+    topic_to_add: str
+    youtube_search_query: str
+
+# Actions au niveau de la sous-section
+class RemoveSubsectionParams(SubsectionIdentifier):
+    pass
+
+class AddSubsectionParams(SectionIdentifier):
+    topic_to_add: str
+    youtube_search_query: str
+
+class ReplaceSubsectionParams(SubsectionIdentifier):
+    new_topic: str
+    youtube_search_query: str
 
 class ClarifyParams(BaseModel):
     question_to_user: str = Field(..., description="La question spécifique et claire à poser à l'utilisateur pour obtenir plus de détails.")
@@ -232,8 +267,21 @@ class ClarifyParams(BaseModel):
 class FinalizeParams(BaseModel):
     final_message: str = Field(..., description="Un bref message de confirmation positif pour l'utilisateur.")
 
+
+# --- NOUVELLE classification des actions ---
 class ActionClassifier(BaseModel):
-    action: Literal["REMOVE", "ADD", "REPLACE", "CLARIFY", "FINALIZE"]
+    action: Literal[
+        # Actions de cours
+        "UPDATE_COURSE_TITLE", "UPDATE_COURSE_INTRODUCTION",
+        # Actions de section
+        "REMOVE_SECTION", "ADD_SECTION",
+        # Actions de sous-section
+        "REMOVE_SUBSECTION", "ADD_SUBSECTION", "REPLACE_SUBSECTION",
+        # Actions de service
+        "CLARIFY", "FINALIZE"
+    ]
+
+
 
 class ModificationGraphState(TypedDict):
     """
