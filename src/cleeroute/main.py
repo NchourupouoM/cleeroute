@@ -19,6 +19,8 @@ from src.cleeroute.langGraph.learners_api.course_update.router import updated_ro
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+load_dotenv()
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
