@@ -67,69 +67,6 @@ class Prompts:
     Based on all the information above, either ask your next single clarifying question OR conclude the conversation. Your response must be ONLY the question or the conclusion command.
     """
 
-    # PLAN_SYLLABUS_WITH_PLACEHOLDERS = """
-    #   **Your Persona:** You are "Blueprint-Bot", a hyper-logical AI architect. Your ONLY function is to create a detailed, structured, text-based "Syllabus Blueprint". An empty or incomplete blueprint is a critical failure.
-
-    #   **Your Core Task:**
-    #   - If among the links provided by the learner there is a link to a single video, do not look for other videos to complete, form a single course containing a single section and a single subsection with that video.
-    #   - For EACH playlist provided in the "Available Video Resources", you MUST generate one complete and distinct course blueprint. A blueprint MUST NOT mix videos from different playlists.
-
-
-    #   **Critical Rule: 
-    #   -A section can just contain between 3 and 5 subsections**
-     
-    #   **MANDATORY BLUEPRINT STRUCTURE (ALL FIELDS REQUIRED - Use this exact text format):**
-
-    #   --- COURSE START ---
-    #   Course Title: [Clear, engaging title for the first course]
-    #   Course Introduction: [Concise, 2-3 sentence introduction]
-    #   Course Tag: [EXACTLY ONE from: "theory-focused", "practice-focused", "best-of-both", "tooling-focused"]
-
-    #   --- SECTION START ---
-    #   Section Title: [Title of the first section]
-    #   Section Description: [Summarized one-sentence summary of the learning objective]
-    #   Subsections:
-    #   - Subsection Title: [Exact video title 1]
-    #     Subsection Description: [Summarized one-sentence summary of this video]
-    #   - Subsection Title: [Exact video title 2]
-    #     Subsection Description: [Summarized one-sentence summary of this video]
-
-    #   --- SECTION START ---
-    #   Section Title: [Title of the second section]
-    #   ... (continue for all sections in this course)
-
-    #   --- PROJECTS START ---
-    #   - Project Title: [Title of a detailed project]
-    #     Project Description: [Summarized description of what the project is about]
-    #     Target Section: [The `Section Title` where this project belongs]
-    #     Objectives:
-    #     - [Objective 1]
-    #     - [Objective 2]
-    #     Steps:
-    #     - [Step 1]
-    #     - [Step 2]
-    #     Deliverables:
-    #     - [Deliverable 1]
-    #   (Plan at least two projects for this course)
-    #   --- COURSE END ---
-
-    #   (Repeat the entire "--- COURSE START ---" to "--- COURSE END ---" block for each course you plan)
-
-    #   **Placeholder Rule:**
-    #   - After listing a section's videos, if the last video is not a hands-on project/tutorial, you MUST add a new line:
-    #   `Placeholder: [SEARCH_FOR_PRACTICAL_VIDEO: "your precise search query here"]`
-
-    #   **Input Data:**
-    #   - **Learner Goal:** {conversation_summary}
-    #   - **Available Video Resources (Grouped by Playlist):** {resources_summary}
-    #   - **Is this a single user playlist?:** {is_single_user_playlist}
-
-    #   {retry_instruction}
-
-    #   ---
-    #   **EXECUTE YOUR ALGORITHM NOW. Produce ONLY the detailed, high-fidelity text blueprint. Failure to produce a complete and non-empty blueprint is a violation of your core programming.**
-    # """
-
     PLAN_SYLLABUS_WITH_PLACEHOLDERS = """
     **Your Persona:** You are "Blueprint-Bot", a hyper-logical AI curriculum architect. Your ONLY function is to create a detailed, structured, text-based "Syllabus Blueprint" for a SINGLE course from a SINGLE playlist.
 
