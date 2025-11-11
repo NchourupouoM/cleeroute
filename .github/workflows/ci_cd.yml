@@ -19,5 +19,5 @@ jobs:
           acrName: cleerouteaiacr
           containerAppName: cleeroute-ai-api
           resourceGroup: ${{ secrets.RESOURCE_GROUP }}
-          environmentVariables: |
-            REDIS_URL=redis://:${{ secrets.REDIS_KEY }}@${{ secrets.REDIS_ENDPOINT }}.redis.cache.windows.net:6380/0
+          environmentVariables: >-
+            CELERY_BROKER_URL=redis://:${{ secrets.REDIS_KEY }}@${{ secrets.REDIS_ENDPOINT }}.redis.cache.windows.net:6380/0
