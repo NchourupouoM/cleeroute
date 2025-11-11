@@ -27,5 +27,6 @@ RUN chown -R celeryuser:celeryuser /app
 # Exposer le port de FastAPI
 EXPOSE 8000
 
-# Lancer supervisord en tant que root (mais les processus seront lancés en tant que celeryuser)
+# Lancer supervisord en tant que celeryuser
+USER celeryuser
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
