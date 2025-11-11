@@ -1,4 +1,4 @@
-# In app/database.py
+# In checkpointer.py
 
 import os
 import pickle
@@ -42,17 +42,18 @@ if not db_url:
     raise ValueError("DATABASE_URL must be set in env")
 
 keepalive_args = "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5"
-# On ajoute les paramètres à l'URL de base, en gérant le cas où
-# il y a déjà des paramètres (? existant) ou non.
 separator = '&' if '?' in db_url else '?'
 db_url_with_keepalives = f"{db_url}{separator}{keepalive_args}"
+# On ajoute les paramètres à l'URL de base, en gérant le
+
 
 # Le pool de connexions asynchrone est configuré pour être robuste
 # aux timeouts réseau des services cloud comme Azure.
 db_pool = AsyncConnectionPool(
     conninfo=db_url_with_keepalives, 
     open=False, # Important: Le cycle de vie est géré par le 'lifespan' de FastAPI
-    max_size=20,
+    min_size=5,
+    max_size=10,
     # Timeout pour obtenir une connexion du pool (en secondes)
     timeout=10, 
     # Temps max d'inactivité (en secondes). Après ce délai, la connexion est fermée proprement.

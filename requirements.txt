@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-pydantic
+pydantic>=2.0.0
 crewai
 crewai_tools
 sentence-transformers
@@ -21,3 +21,6 @@ psycopg_binary
 google-api-python-client
 langchain-openai
 langsmith
+celery
+redis
+gevent

@@ -1,4 +1,4 @@
-# In app/state.py
+# In state.py
 
 from typing import List, TypedDict, Optional, Any,Annotated
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -73,4 +73,6 @@ class GraphState(TypedDict):
     final_syllabus_options_str: Annotated[Optional[str], _overwrite]
 
     blueprint_retries: int
+
+    current_node: Optional[str]
 

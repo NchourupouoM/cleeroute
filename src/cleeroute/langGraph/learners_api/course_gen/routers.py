@@ -1,4 +1,4 @@
-# In app/routers/journeys.py
+# In routers.py
 
 import uuid
 from typing import Dict, Optional
@@ -15,7 +15,8 @@ from .models import (
 )
 
 from .state import GraphState, PydanticSerializer
-from .dependencies import get_conversation_graph, get_syllabus_graph  # We will create this dependency injector
+from .dependencies import get_conversation_graph, get_syllabus_graph
+from .tasks import generate_syllabus_task
 
 # Create a new router instance
 # This allows us to group all related endpoints under a common prefix and tag
@@ -136,56 +137,41 @@ async def continue_learning_journey(
 @syllabus_router.post("/gen_syllabus/{thread_id}/course", response_model=JourneyStatusResponse, status_code=202)
 async def generate_syllabus(
     thread_id: str,
-    background_tasks: BackgroundTasks,# Injection de dépendance pour les tâches de fond
     x_youtube_api_key: Optional[str] = Header(None, alias="X-Youtube-Api-Key"),
-    app_graph: Pregel = Depends(get_syllabus_graph) # Utilise le graphe de génération
+    convo_graph: Pregel = Depends(get_conversation_graph)
 ):
-    """
-    Triggers the syllabus generation as a background task and returns immediately.
-    The client must then poll the status endpoint to get the result.
-    """
     config = {"configurable": {"thread_id": thread_id}}
+    
+    # Récupérer l'état actuel de la conversation (important !)
+    # Nous avons besoin de la dépendance du graphe de conversation ici
+    snapshot = await convo_graph.aget_state(config)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="Conversation thread not found.")
+    
+    # L'état est déjà un dictionnaire prêt à être passé
+    initial_state_for_generation = dict(snapshot.values)
 
-    os.environ['YOUTUBE_API_KEY'] = x_youtube_api_key if x_youtube_api_key else os.getenv("YOUTUBE_API_KEY")
+    # **Log pour débogage**
+    # print(f"--- DEBUG: initial_state_for_generation = {initial_state_for_generation} ---")
+    
+    # **Forcer les valeurs à être sérialisables**
+    for key in initial_state_for_generation:
+        if not isinstance(initial_state_for_generation[key], (str, int, float, bool, list, dict, type(None))):
+            initial_state_for_generation[key] = str(initial_state_for_generation[key])
+    
+    youtube_key = x_youtube_api_key if x_youtube_api_key else os.getenv("YOUTUBE_API_KEY")
 
-    async def run_generation_task():
-        """
-        Runs the generation graph and explicitly saves the final state.
-        """
-        try:
-            print(f"--- [BACKGROUND] Starting syllabus generation for thread: {thread_id} ---")
+    # Lancer la tâche en arrière-plan avec Celery
+    generate_syllabus_task.delay(
+        thread_id, 
+        initial_state_for_generation,
+        youtube_key
+    )
 
-            # ÉTAPE 1: EXÉCUTER le graphe et CAPTURER le résultat en mémoire.
-            final_state_from_invoke = await app_graph.ainvoke({}, config)
-
-            # --- AJOUT DE LOGS DE DÉBOGAGE CRUCIAUX ---
-            # if final_state_from_invoke and final_state_from_invoke.get('final_syllabus_options_str'):
-            #     print(f"--- [BACKGROUND] ainvoke successful. Syllabus found in memory. Preparing to save...")
-            # else:
-            #     print(f"--- [BACKGROUND] WARNING: ainvoke finished but 'final_syllabus_options_str' is missing from the result.")
-            #     print(f"--- [BACKGROUND] Full result from ainvoke: {final_state_from_invoke}")
-            # La sauvegarde explicite reste une bonne pratique
-            # ÉTAPE 2: SAUVEGARDER EXPLICITEMENT le résultat dans la base de données.
-            # aupdate_state va charger le checkpoint, fusionner notre résultat final,
-            # et sauvegarder le tout. C'est l'étape qui manquait.
-            if final_state_from_invoke:
-                await app_graph.aupdate_state(config, final_state_from_invoke)
-                print(f"--- [BACKGROUND] Successfully saved final state to checkpoint for thread: {thread_id} ---")
-
-        except Exception as e:
-            # C'est une bonne pratique de logger les erreurs dans les tâches de fond
-            print(f"--- [BACKGROUND] ERROR during syllabus generation for thread {thread_id}: {e}")
-            # Ici, vous pourriez aussi mettre à jour l'état avec un message d'erreur
-
-    # On ajoute notre fonction à la liste des tâches à exécuter en arrière-plan.
-    # FastAPI s'en occupera après avoir envoyé la réponse 202.
-    background_tasks.add_task(run_generation_task)
-
-    # On répond IMMÉDIATEMENT au client pour ne pas le faire attendre.
     return JourneyStatusResponse(
         status="generation_started",
         thread_id=thread_id,
-        next_question="Syllabus generation has started. Please check the status endpoint in a few moments to retrieve the result."
+        next_question="Syllabus generation has started. Please poll the status endpoint."
     )
 
 
@@ -239,7 +225,25 @@ async def get_journey_status(
             raise HTTPException(status_code=500, detail="Failed to parse the generated syllabus.")
     else:
         print(f"--- Syllabus: {final_syllabus_str} ---")
+
+        # Le cours n'est pas encore finalisé, on regarde le nœud en cours
+        current_node = state.get('current_node', 'starting')
+
+        # Vous pouvez créer un mapping pour des messages plus conviviaux
+        status_messages = {
+            "generate_search_strategy": "Analyzing your request to create a search plan...",
+            "process_user_links": "Analyzing the links you provided...",
+            "search_resources": "Searching for high-quality content on YouTube...",
+            "merging_ressources":"Merging found resources",
+            "plan_syllabus": "Designing the course structure (this may take a moment)...",
+            "search_for_projects": "Finding suitable project videos for the course...",
+            "finalize_syllabus_json": "Finalizing the course...",
+            "validate_course": "Validating the course structure...",
+            "starting": "Generation is initializing..."
+        }
+
         return JourneyStatusResponse(
-            status="generation_in_progress",
-            thread_id=thread_id
+            status=current_node,
+            thread_id=thread_id,
+            next_question=status_messages.get(current_node, "Processing...")
         )
