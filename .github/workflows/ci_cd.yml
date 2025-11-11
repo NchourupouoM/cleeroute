@@ -1,37 +1,10 @@
-# name: Azure Container Apps Deploy
-# on:
-#   push:
-#     branches:
-#       - master
-# jobs:
-#   build:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - uses: actions/checkout@v3
-
-#       - name: Log in to Azure
-#         uses: azure/login@v1
-#         with:
-#           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-#       - name: Build and deploy Container App
-#         uses: azure/container-apps-deploy-action@v1
-#         with:
-#           appSourcePath: ${{ github.workspace }}
-#           acrName: cleerouteaiacr
-#           containerAppName: cleeroute-ai-api
-#           resourceGroup: ${{ secrets.RESOURCE_GROUP }} 
-
 name: Azure Container Apps Deploy
-
 on:
   push:
     branches:
       - master
-
 jobs:
-  deploy-fastapi:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -39,30 +12,12 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Build and deploy FastAPI
+      - name: Build and deploy Container App
         uses: azure/container-apps-deploy-action@v1
         with:
           appSourcePath: ${{ github.workspace }}
           acrName: cleerouteaiacr
           containerAppName: cleeroute-ai-api
           resourceGroup: ${{ secrets.RESOURCE_GROUP }}
-          # dockerfilePath: Dockerfile
-
-  deploy-celery:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Log in to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Build and deploy Celery
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          appSourcePath: ${{ github.workspace }}
-          acrName: cleerouteaiacr
-          containerAppName: cleeroute-ai-worker
-          resourceGroup: ${{ secrets.RESOURCE_GROUP }}
-          dockerfilePath: worker/Dockerfile
-          # environmentVariables: |
-          #   REDIS_URL=redis://:${{ secrets.REDIS_KEY }}@${{ secrets.REDIS_ENDPOINT }}.redis.cache.windows.net:6380/0
+          environmentVariables: |
+            REDIS_URL=redis://:${{ secrets.REDIS_KEY }}@${{ secrets.REDIS_ENDPOINT }}.redis.cache.windows.net:6380/0
