@@ -1,32 +1,37 @@
-FROM python:3.11-slim
+# FROM python:3.12-slim
+# WORKDIR /app
+# COPY requirements.txt .
+# RUN pip install --no-cache-dir -r requirements.txt
+# COPY . .
+# EXPOSE 8000
+# CMD ["uvicorn", "src.cleeroute.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-# Créer un utilisateur non-root
-RUN useradd -m celeryuser
-
-# Installer supervisord et créer les dossiers de logs
-RUN apt-get update && apt-get install -y supervisor && \
-    mkdir -p /var/log && \
-    chown -R celeryuser:celeryuser /var/log
+# Utilisez une image Python légère
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copier les fichiers de configuration
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY celeryconfig.py .
+# Installez les dépendances système nécessaires
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Installer les dépendances Python
+# Copiez les fichiers nécessaires pour l'installation
 COPY requirements.txt .
+
+# Installez les dépendances Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copier le reste de l'application
+# Copiez le reste de l'application
 COPY . .
 
-# Changer les permissions pour l'utilisateur non-root
-RUN chown -R celeryuser:celeryuser /app
+# Créez un script d'entrée pour démarrer FastAPI et Celery
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Exposer le port de FastAPI
+# Exposez le port pour FastAPI
 EXPOSE 8000
 
-# Lancer supervisord en tant que celeryuser
-USER celeryuser
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Commande pour démarrer l'application
+CMD ["/entrypoint.sh"]

@@ -2,6 +2,10 @@
 
 import uuid
 from typing import Dict, Optional
+from .tasks import generate_syllabus_task
+from celery.result import AsyncResult
+from .tasks import app as celery_app
+
 import os
 from fastapi import APIRouter, HTTPException, Body, Depends, BackgroundTasks, Header
 from langgraph.pregel import Pregel
@@ -138,41 +142,16 @@ async def continue_learning_journey(
 async def generate_syllabus(
     thread_id: str,
     x_youtube_api_key: Optional[str] = Header(None, alias="X-Youtube-Api-Key"),
-    convo_graph: Pregel = Depends(get_conversation_graph)
 ):
-    config = {"configurable": {"thread_id": thread_id}}
-    
-    # Récupérer l'état actuel de la conversation (important !)
-    # Nous avons besoin de la dépendance du graphe de conversation ici
-    snapshot = await convo_graph.aget_state(config)
-    if not snapshot:
-        raise HTTPException(status_code=404, detail="Conversation thread not found.")
-    
-    # L'état est déjà un dictionnaire prêt à être passé
-    initial_state_for_generation = dict(snapshot.values)
-
-    # **Log pour débogage**
-    # print(f"--- DEBUG: initial_state_for_generation = {initial_state_for_generation} ---")
-    
-    # **Forcer les valeurs à être sérialisables**
-    for key in initial_state_for_generation:
-        if not isinstance(initial_state_for_generation[key], (str, int, float, bool, list, dict, type(None))):
-            initial_state_for_generation[key] = str(initial_state_for_generation[key])
-    
-    youtube_key = x_youtube_api_key if x_youtube_api_key else os.getenv("YOUTUBE_API_KEY")
-
-    # Lancer la tâche en arrière-plan avec Celery
-    generate_syllabus_task.delay(
-        thread_id, 
-        initial_state_for_generation,
-        youtube_key
-    )
-
+    # Lancement de la tâche Celery
+    task = generate_syllabus_task.delay(thread_id, x_youtube_api_key)
+    print(f"Tâche envoyée à Celery avec l'ID: {task.id}")  # Log pour confirmer l'envoi
     return JourneyStatusResponse(
         status="generation_started",
         thread_id=thread_id,
-        next_question="Syllabus generation has started. Please poll the status endpoint."
+        next_question="Syllabus generation has started. Please check the status endpoint in a few moments."
     )
+
 
 
 @syllabus_router.get("/gen_syllabus/{thread_id}/status", response_model=JourneyStatusResponse, summary="Get the status of a journey")
@@ -243,7 +222,6 @@ async def get_journey_status(
         }
 
         return JourneyStatusResponse(
-            status=current_node,
-            thread_id=thread_id,
-            next_question=status_messages.get(current_node, "Processing...")
+            status=state.get('status', 'in_progress'),
+            thread_id=thread_id
         )
