@@ -2,6 +2,10 @@
 
 import uuid
 from typing import Dict, Optional
+from .tasks import generate_syllabus_task
+from celery.result import AsyncResult
+from .tasks import app as celery_app
+
 import os
 from fastapi import APIRouter, HTTPException, Body, Depends, BackgroundTasks, Header
 from langgraph.pregel import Pregel
@@ -136,57 +140,17 @@ async def continue_learning_journey(
 @syllabus_router.post("/gen_syllabus/{thread_id}/course", response_model=JourneyStatusResponse, status_code=202)
 async def generate_syllabus(
     thread_id: str,
-    background_tasks: BackgroundTasks,# Injection de dépendance pour les tâches de fond
     x_youtube_api_key: Optional[str] = Header(None, alias="X-Youtube-Api-Key"),
-    app_graph: Pregel = Depends(get_syllabus_graph) # Utilise le graphe de génération
 ):
-    """
-    Triggers the syllabus generation as a background task and returns immediately.
-    The client must then poll the status endpoint to get the result.
-    """
-    config = {"configurable": {"thread_id": thread_id}}
-
-    os.environ['YOUTUBE_API_KEY'] = x_youtube_api_key if x_youtube_api_key else os.getenv("YOUTUBE_API_KEY")
-
-    async def run_generation_task():
-        """
-        Runs the generation graph and explicitly saves the final state.
-        """
-        try:
-            print(f"--- [BACKGROUND] Starting syllabus generation for thread: {thread_id} ---")
-
-            # ÉTAPE 1: EXÉCUTER le graphe et CAPTURER le résultat en mémoire.
-            final_state_from_invoke = await app_graph.ainvoke({}, config)
-
-            # --- AJOUT DE LOGS DE DÉBOGAGE CRUCIAUX ---
-            # if final_state_from_invoke and final_state_from_invoke.get('final_syllabus_options_str'):
-            #     print(f"--- [BACKGROUND] ainvoke successful. Syllabus found in memory. Preparing to save...")
-            # else:
-            #     print(f"--- [BACKGROUND] WARNING: ainvoke finished but 'final_syllabus_options_str' is missing from the result.")
-            #     print(f"--- [BACKGROUND] Full result from ainvoke: {final_state_from_invoke}")
-            # La sauvegarde explicite reste une bonne pratique
-            # ÉTAPE 2: SAUVEGARDER EXPLICITEMENT le résultat dans la base de données.
-            # aupdate_state va charger le checkpoint, fusionner notre résultat final,
-            # et sauvegarder le tout. C'est l'étape qui manquait.
-            if final_state_from_invoke:
-                await app_graph.aupdate_state(config, final_state_from_invoke)
-                print(f"--- [BACKGROUND] Successfully saved final state to checkpoint for thread: {thread_id} ---")
-
-        except Exception as e:
-            # C'est une bonne pratique de logger les erreurs dans les tâches de fond
-            print(f"--- [BACKGROUND] ERROR during syllabus generation for thread {thread_id}: {e}")
-            # Ici, vous pourriez aussi mettre à jour l'état avec un message d'erreur
-
-    # On ajoute notre fonction à la liste des tâches à exécuter en arrière-plan.
-    # FastAPI s'en occupera après avoir envoyé la réponse 202.
-    background_tasks.add_task(run_generation_task)
-
-    # On répond IMMÉDIATEMENT au client pour ne pas le faire attendre.
+    # Lancement de la tâche Celery
+    task = generate_syllabus_task.delay(thread_id, x_youtube_api_key)
+    print(f"Tâche envoyée à Celery avec l'ID: {task.id}")  # Log pour confirmer l'envoi
     return JourneyStatusResponse(
         status="generation_started",
         thread_id=thread_id,
-        next_question="Syllabus generation has started. Please check the status endpoint in a few moments to retrieve the result."
+        next_question="Syllabus generation has started. Please check the status endpoint in a few moments."
     )
+
 
 
 @syllabus_router.get("/gen_syllabus/{thread_id}/status", response_model=JourneyStatusResponse, summary="Get the status of a journey")
@@ -240,6 +204,6 @@ async def get_journey_status(
     else:
         print(f"--- Syllabus: {final_syllabus_str} ---")
         return JourneyStatusResponse(
-            status="generation_in_progress",
+            status=state.get('status', 'in_progress'),
             thread_id=thread_id
         )
