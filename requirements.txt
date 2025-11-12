@@ -22,3 +22,6 @@ google-api-python-client
 langchain-openai
 langsmith
 flower
+redis
+celery
+kombu
