@@ -1,35 +1,63 @@
-# Fichier: src/cleeroute/langGraph/learners_api/course_gen/tasks.py
+from celery import Celery
+from src.cleeroute.db.checkpointer import get_checkpointer, db_pool, PickleSerde
+from src.cleeroute.langGraph.learners_api.course_gen.graph import create_syllabus_generation_graph
+from langgraph.pregel import Pregel
+
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+import asyncio
+import logging
+from google.api_core.exceptions import GoogleAPICallError, RetryError
+
 
 import os
-import asyncio
-from src.cleeroute.tasks import celery_app
-from .graph import create_syllabus_generation_graph
-from .state import GraphState
-from src.cleeroute.db.checkpointer import db_pool
+from dotenv import load_dotenv
+load_dotenv()
 
-@celery_app.task(name="generate_syllabus_task")
-def generate_syllabus_task(thread_id: str, initial_state_dict: dict, youtube_api_key: str):
-    print(f"--- [CELERY WORKER] Received task for thread: {thread_id} ---")
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(_run_async_graph(thread_id, initial_state_dict, youtube_api_key))
+app = Celery('tasks', broker=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"))
+app.conf.update(
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='UTC',
+    enable_utc=True,
+    task_time_limit=3600,
+    task_soft_time_limit=3000,
+)
 
-async def _run_async_graph(thread_id: str, initial_state_dict: dict, youtube_api_key: str):
-        
-            # **Validation de l'état initial**
-        for key, value in initial_state_dict.items():
-            if not isinstance(value, (str, int, float, bool, list, dict, type(None))):
-                print(f"--- WARNING: Invalid value type for key '{key}': {type(value)}. Converting to str. ---")
-                initial_state_dict[key] = str(value)
+logger = logging.getLogger(__name__)
 
-        async with db_pool.connection():
-            try:
-                os.environ['YOUTUBE_API_KEY'] = youtube_api_key
-                syllabus_graph = create_syllabus_generation_graph()
-                config = {"configurable": {"thread_id": thread_id}}
-                final_state = await syllabus_graph.ainvoke(initial_state_dict, config)
-                if final_state:
-                    await syllabus_graph.aupdate_state(config, final_state)
-                return {"status": "SUCCESS", "thread_id": thread_id}
-            except Exception as e:
-                print(f"--- [CELERY WORKER] FATAL ERROR: {e}")
-                raise
+
+@app.task(bind=True)
+def generate_syllabus_task(self, thread_id: str, youtube_api_key: str):
+    try:
+        result = asyncio.run(_generate_syllabus_async(thread_id, youtube_api_key))
+        return result
+    except Exception as e:
+        logger.error(f"Erreur dans la tâche generate_syllabus_task: {e}", exc_info=True)
+        raise self.retry(exc=e)
+
+async def _generate_syllabus_async(thread_id: str, youtube_api_key: str):
+    try:
+        if not db_pool._opened:
+            await db_pool.open()
+
+        checkpointer = AsyncPostgresSaver(conn=db_pool, serde=PickleSerde)
+        syllabus_graph = create_syllabus_generation_graph(checkpointer)
+        config = {"configurable": {"thread_id": thread_id}}
+        os.environ['YOUTUBE_API_KEY'] = youtube_api_key if youtube_api_key else os.getenv("YOUTUBE_API_KEY")
+
+        final_state = await syllabus_graph.ainvoke({}, config)
+
+        if final_state:
+            await syllabus_graph.aupdate_state(config, final_state)
+
+        # Attendre que toutes les tâches asynchrones soient terminées
+        pending = asyncio.all_tasks()
+        for task in pending:
+            if task is not asyncio.current_task():
+                await task
+
+        return {"status": "completed", "thread_id": thread_id}
+    except Exception as e:
+        logger.error(f"Erreur dans _generate_syllabus_async: {e}", exc_info=True)
+        raise

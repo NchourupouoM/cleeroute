@@ -54,7 +54,8 @@ def initialize_state(state: GraphState) -> dict: # <-- Retourne un dict
         'user_playlist_str': None,
         'searched_playlists_str': [],
         'merged_resources_str': [],
-        'final_syllabus_options_str': None
+        'final_syllabus_options_str': None,
+        'status': "starting"
     }
 
 async def generate_search_strategy(state: GraphState) -> dict:
@@ -85,7 +86,7 @@ async def generate_search_strategy(state: GraphState) -> dict:
 
     print(f"--- Generated Queries: {queries} ---")
 
-    return {"search_queries": queries, "current_node":"generate_search_strategy"}
+    return {"search_queries": queries, "status": "search_strategy_generated"}
 
 
 async def process_user_links_node(state: GraphState) -> dict:
@@ -148,36 +149,20 @@ async def process_user_links_node(state: GraphState) -> dict:
 
     # 4. Crée une playlist virtuelle pour les vidéos individuelles
     if single_videos:
-        try:
-            virtual_playlist = AnalyzedPlaylist(
-                playlist_title="User-Submitted Videos",
-                playlist_url="https://example.com/virtual-playlist",
-                playlist_description="Videos submitted by the user, grouped as a virtual playlist.",
-                videos=single_videos
-            )
-            user_playlists.insert(0, virtual_playlist)
-        except Exception as e:
-            print(f"--- ERROR creating virtual playlist: {e}. Using individual videos. ---")
-            # Ajoute les vidéos individuellement si la playlist virtuelle échoue
-            for video in single_videos:
-                try:
-                    user_playlists.append(AnalyzedPlaylist(
-                        playlist_title=f"Single Video: {video.title[:50]}...",
-                        playlist_url=video.video_url,
-                        playlist_description=f"Individual video: {video.title}",
-                        videos=[video]
-                    ))
-                except Exception as e:
-                    print(f"--- ERROR creating single-video playlist for {video.title}: {e}. Skipping. ---")
-
-    # 5. Sérialise les résultats
-    try:
-        serialized_playlists = [PydanticSerializer.dumps(p) for p in user_playlists]
-        print(f"--- Successfully processed {len(user_playlists)} playlists from user links. ---")
-        return {"merged_resources_str": serialized_playlists, "current_node": "process_user_links"}
-    except Exception as e:
-        print(f"--- CRITICAL ERROR serializing playlists: {e}. Returning empty. ---")
-        return {"merged_resources_str": [], "current_node": "process_user_links"}
+        virtual_playlist = AnalyzedPlaylist(
+            playlist_title="Your Submitted Videos",
+            playlist_url="http://example.com/virtual-playlist",
+            videos=single_videos
+        )
+        user_playlists.insert(0, virtual_playlist)
+    
+    print(f"--- Successfully processed {len(user_playlists)} playlists from user links. ---")
+    
+    # On sérialise le résultat pour le stocker dans l'état
+    serialized_playlists = [PydanticSerializer.dumps(p) for p in user_playlists]
+    
+    # Ce nœud remplit directement 'merged_resources_str' car il n'y a pas d'autre source
+    return {"merged_resources_str": serialized_playlists, "status": "user_links_processed"}
 
 
 
@@ -185,15 +170,17 @@ async def search_resources(state: GraphState) -> dict:
     """Searches YouTube for additional playlists using the advanced search and filter service."""
     print("--- Searching for Resources ---")
     if state['search_queries']:
-        # The key change is here: call the new service and pass the user_input for context.
-        playlists = await search_and_filter_youtube_playlists(
-            queries=state['search_queries'],
-            user_input=state['user_input_text']
-        )
-        print(f"--- Found and filtered {len(playlists)} high-quality playlists ---")
-        # On retourne UNIQUEMENT la clé que l'on veut mettre à jour.
-        return {"searched_playlists_str": [PydanticSerializer.dumps(p) for p in playlists], "current_node":"search_resources"}
-    return {}
+        try:
+            playlists = await search_and_filter_youtube_playlists(
+                queries=state['search_queries'],
+                user_input=state['user_input_text']
+            )
+            print(f"--- Found and filtered {len(playlists)} high-quality playlists ---")
+            return {"searched_playlists_str": [PydanticSerializer.dumps(p) for p in playlists], "status": "resources_searched"}
+        except Exception as e:
+            print(f"--- ERROR during search_resources: {e} ---")
+            return {"searched_playlists_str": []}
+    return {"searched_playlists_str": []}
 
 
 def merge_resources(state: GraphState) -> dict: # <-- Retourne un dict
@@ -205,7 +192,7 @@ def merge_resources(state: GraphState) -> dict: # <-- Retourne un dict
     if state.get('searched_playlists_str'):
         all_playlists.extend(state['searched_playlists_str'])
     # On retourne UNIQUEMENT la clé que l'on veut mettre à jour.
-    return {"merged_resources_str": all_playlists, "current_node":"merging_ressources"}
+    return {"merged_resources_str": all_playlists, "status": "resources_merged"}
 
 async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un dict
     """Manages the conversation with the user."""
@@ -311,7 +298,7 @@ async def plan_syllabus(state: GraphState) -> dict:
     final_blueprint_str = "\n\n".join(all_blueprints)
     
     print(f"--- All blueprints generated. Total length: {len(final_blueprint_str)} chars. ---")
-    return {"syllabus_blueprint_str": final_blueprint_str, "current_node":"planning_syllabus"}
+    return {"syllabus_blueprint_str": final_blueprint_str, "status": "syllabus_planned"}
 
 
 # NŒUD 2 : RECHERCHE DE VIDÉOS-PROJETS
@@ -361,8 +348,7 @@ async def find_and_search_project_videos(state: GraphState) -> dict:
     found_videos_json_str = json.dumps(found_videos_map_dicts)
 
     print(f"--- Found {len(found_videos_map)} project videos. ---")
-    return {"found_project_videos_str": found_videos_json_str, "current_node":"search_for_projects"}
-
+    return {"found_project_videos_str": found_videos_json_str, "status": "project_videos_searching"}
 
 #blueprint validation
 def validate_blueprint_node(state: GraphState) -> dict:
@@ -376,12 +362,12 @@ def validate_blueprint_node(state: GraphState) -> dict:
     if blueprint_str and "Course Title:" in blueprint_str and "Section Title:" in blueprint_str:
         print("--- Blueprint is VALID. ---")
         # On ne retourne rien de spécial, la validation passe
-        return {}
+        return {"status": "course_valid"}
     else:
         print("--- Blueprint is INVALID or EMPTY. Incrementing retry counter. ---")
         # On incrémente le compteur de tentatives
         retries = state.get('blueprint_retries', 0) + 1
-        return {"syllabus_blueprint_str": "", "blueprint_retries": retries, "current_node":"validate_course"}
+        return {"syllabus_blueprint_str": "", "blueprint_retries": retries, "status": "validating_course"}
 
 def route_after_validation(state: GraphState) -> Literal["retry_planning", "proceed_to_projects"]:
     """
@@ -489,7 +475,7 @@ async def finalize_syllabus_json(state: GraphState) -> dict:
         validated_syllabus = SyllabusOptions(syllabi=syllabi_list_of_dicts)
         
         print("--- Final Syllabus JSON Parsed and Validated Successfully ---")
-        return {"final_syllabus_options_str": PydanticSerializer.dumps(validated_syllabus)}
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(validated_syllabus), "status": "organizing_course"}
 
     except Exception as e:
         print(f"--- FATAL ERROR during Python blueprint parsing: {e} ---")
@@ -537,7 +523,7 @@ async def generate_json_from_plan(state: GraphState) -> dict:
     except Exception as e:
         print(f"--- ERROR during JSON translation: {e}. Returning empty syllabus. ---")
         empty_syllabus = SyllabusOptions(syllabi=[])
-        return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus), "current_node":"finalizing_course_structuring"}
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(empty_syllabus), "status": "course_completed"}
 
     
 def route_data_collection(state: GraphState) -> Literal["fetch_user_playlist", "search_new_playlists"]:
@@ -559,7 +545,7 @@ def route_data_collection(state: GraphState) -> Literal["fetch_user_playlist", "
 # --------------------------
 
 # --- GRAPHE 1: Graphe de Conversation (Interactif) ---
-def create_conversation_graph():
+def create_conversation_graph(checkpointer=None):
     """
     Creates a simple, robust graph for handling the user conversation.
     """
@@ -594,7 +580,7 @@ def create_conversation_graph():
 
 
 # --- GRAPHE 2: Graphe de Génération de Syllabus (Non-Interactif) ---
-def create_syllabus_generation_graph():
+def create_syllabus_generation_graph(checkpointer=None):
     """
     Creates a non-interactive graph that takes a finished conversation state
     and generates the final syllabus.

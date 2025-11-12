@@ -74,5 +74,5 @@ class GraphState(TypedDict):
 
     blueprint_retries: int
 
-    current_node: Optional[str]
+    status: Annotated[Optional[str], _overwrite]
 

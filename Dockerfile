@@ -1,23 +1,37 @@
-# Dockerfile
-FROM python:3.11-slim
+# FROM python:3.12-slim
+# WORKDIR /app
+# COPY requirements.txt .
+# RUN pip install --no-cache-dir -r requirements.txt
+# COPY . .
+# EXPOSE 8000
+# CMD ["uvicorn", "src.cleeroute.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-# Installer supervisord
-RUN apt-get update && apt-get install -y supervisor
+# Utilisez une image Python légère
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copier les fichiers de configuration de supervisord
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# Installez les dépendances système nécessaires
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Installer les dépendances Python
+# Copiez les fichiers nécessaires pour l'installation
 COPY requirements.txt .
+
+# Installez les dépendances Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copier le reste de l'application
+# Copiez le reste de l'application
 COPY . .
 
-# Exposer le port de FastAPI
+# Créez un script d'entrée pour démarrer FastAPI et Celery
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Exposez le port pour FastAPI
 EXPOSE 8000
 
-# Lancer supervisord
-CMD ["/usr/bin/supervisord"]
+# Commande pour démarrer l'application
+CMD ["/entrypoint.sh"]

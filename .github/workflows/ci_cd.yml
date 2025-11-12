@@ -1,8 +1,10 @@
 name: Azure Container Apps Deploy
+
 on:
   push:
     branches:
       - master
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -12,12 +14,13 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Build and deploy Container App
+
+      - name: Build and push container image to ACR
         uses: azure/container-apps-deploy-action@v1
         with:
           appSourcePath: ${{ github.workspace }}
           acrName: cleerouteaiacr
           containerAppName: cleeroute-ai-api
           resourceGroup: ${{ secrets.RESOURCE_GROUP }}
-          environmentVariables: |
-            REDIS_URL=redis://:${{ secrets.REDIS_KEY }}@${{ secrets.REDIS_ENDPOINT }}.redis.cache.windows.net:6380/0
+
+          dockerfilePath: Dockerfile
