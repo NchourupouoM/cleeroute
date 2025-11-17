@@ -120,8 +120,10 @@
 
 
 
-maintenant nous allons passer a une autre etape suivante, celle du chat et des quizz.
-l'idee est la suivante:
-lorsque l'apprenant fini de modifier le cours et apres validation, le cours choisi est enregistre dans une base de donnees. 
+# maintenant nous allons passer a une autre etape suivante, celle du chat et des quizz.
+# l'idee est la suivante:
+# lorsque l'apprenant fini de modifier le cours et apres validation, le cours choisi est enregistre dans une base de donnees. 
 
-lors de l'apprentissage, l'apprenant doit avoir la possibilite de chatter avec le model consernant la section et la video courante ( c'est-a-dire, la sous-section courante)
+# lors de l'apprentissage, l'apprenant doit avoir la possibilite de chatter avec le model consernant la section et la video courante ( c'est-a-dire, la sous-section courante)
+
+# 1a698070-188d-466f-84b6-c6f66c612161
