@@ -8,38 +8,60 @@
 
 
 
-FROM python:3.12-slim
-
-# Créez un utilisateur non-root
-RUN useradd -m myuser
+# ===========================
+#  STAGE 1 : build dependencies
+# ===========================
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Installez les dépendances système nécessaires
+# Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libpq5 \
+    libpq-dev \
+    libssl-dev \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiez les fichiers nécessaires pour l'installation
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Copiez le reste de l'application
+
+# ===========================
+#  STAGE 2 : final image
+# ===========================
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Security: Install CA + supervisor
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy installed site-packages from builder
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# Add project files
 COPY . .
 
-# Créez un script d'entrée pour démarrer FastAPI et Celery
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh && chown myuser:myuser /entrypoint.sh
+# Create non-root user
+RUN useradd -m celeryuser && chown -R celeryuser:celeryuser /app
 
-# Changez le propriétaire du répertoire /app
-RUN chown -R myuser:myuser /app
+# Supervisord config
+COPY supervisord.conf /etc/supervisor/supervisord.conf
 
-# Exposez le port pour FastAPI
+# Healthcheck (Uvicorn)
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -qO- http://localhost:8000/health || exit 1
+
 EXPOSE 8000
 
-# Changez l'utilisateur pour exécuter le conteneur
-USER myuser
+USER celeryuser
 
-# Commande pour démarrer l'application
-CMD ["/entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]

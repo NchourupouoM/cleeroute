@@ -15,6 +15,34 @@ celery_app = Celery(
     backend=os.getenv('CELERY_RESULT_BACKEND'),
 )
 
+
+celery_app.conf.update(
+    broker_connection_retry_on_startup=True,
+
+    # Azure Redis recommended configs
+    broker_transport_options={
+        "visibility_timeout": 3600,   # 1h
+        "ssl": {"ssl_cert_reqs": None}, # Azure uses public certs
+    },
+
+    result_backend_transport_options={
+        "retry_policy": {
+            "timeout": 5.0
+        }
+    },
+
+    task_time_limit=60 * 5,       # Hard timeout 5 min
+    task_soft_time_limit=60 * 4,  # Soft timeout 4 min
+    worker_concurrency=4,
+    worker_prefetch_multiplier=1, # Best for API tasks
+
+    task_default_retry_delay=10,
+    task_default_rate_limit="20/m",
+    task_acks_late=True,
+    worker_max_tasks_per_child=100,
+)
+
+
 @worker_process_init.connect
 def init_worker(**kwargs):
     print("--- [CELERY WORKER LIFECYCLE] Worker process starting. Opening DB pool. ---")
