@@ -23,7 +23,7 @@ load_dotenv()
 
 # Initialize the LLM
 llm = ChatGoogleGenerativeAI(
-    model=os.getenv("MODEL_2"), 
+    model=os.getenv("MODEL_2", "gemini-2.5-flash"), 
     google_api_key=os.getenv("GEMINI_API_KEY"),
     max_tokens=8192,
     temperature=0.3

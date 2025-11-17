@@ -22,5 +22,4 @@ jobs:
           acrName: cleerouteaiacr
           containerAppName: cleeroute-ai-api
           resourceGroup: ${{ secrets.RESOURCE_GROUP }}
-
           dockerfilePath: Dockerfile
