@@ -2,7 +2,9 @@ from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 import time
 
-from src.cleeroute.db.checkpointer import lifespan
+from src.cleeroute.db.checkpointer import lifespan as checkpointer_lifespan
+from src.cleeroute.db.app_db import app_db_lifespan as application_db_lifespan
+from contextlib import asynccontextmanager
 
 from src.cleeroute.db.models import VideoSearch, VideoResponse, PaginatedVideoResponse
 from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string
@@ -16,13 +18,31 @@ from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import 
 # from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
 from src.cleeroute.langGraph.learners_api.course_gen.routers import syllabus_router
 from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
+from src.cleeroute.langGraph.learners_api.quiz.routers import quiz_router
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 load_dotenv()
 
-app = FastAPI(lifespan=lifespan)
+@asynccontextmanager
+async def main_lifespan(app: FastAPI):
+    """
+    Le gestionnaire de cycle de vie principal qui orchestre les autres.
+    """
+    # On entre dans le contexte de chaque gestionnaire de cycle de vie
+    async with checkpointer_lifespan(app):
+        async with application_db_lifespan(app):
+            yield
+
+app = FastAPI(
+    title="Cleeroute AI API",
+    # On utilise notre nouveau lifespan principal
+    lifespan=main_lifespan
+)
+
+
+app = FastAPI(lifespan=main_lifespan)
 
 # Configurer les origines autorisées
 origins = [
@@ -96,7 +116,9 @@ app.include_router(project_content_router_stream, prefix="", tags=["Project cont
 app.include_router(syllabus_router, prefix="", tags=["Syllabus Generators for Learners using youtube playlists"])
 # =============================================================================================
 app.include_router(updated_router, prefix="", tags=["Updated the learner choose path in the course structure"])
-
+# =============================================================================================
+app.include_router(quiz_router, prefix="", tags=["Quiz Generators for Learners"])
+# =============================================================================================
     
 if __name__ == "__main__":
     import uvicorn

@@ -4,16 +4,29 @@ from celery.signals import worker_process_init, worker_process_shutdown
 from dotenv import load_dotenv
 from src.cleeroute.db.checkpointer import db_pool
 import asyncio
-
+import ssl
 # Charger les variables d'environnement pour le worker
 load_dotenv()
+
+REDIS_URL = os.getenv("CELERY_BROKER_URL")
 
 # 1. Configuration de l'application Celery
 celery_app = Celery(
     'cleeroute_tasks', # Nom de l'application
-    broker=os.getenv('CELERY_BROKER_URL'),
-    backend=os.getenv('CELERY_RESULT_BACKEND'),
+    broker=REDIS_URL,
+    backend=REDIS_URL,
 )
+
+# Configuration spécifique pour Azure Redis (SSL)
+if REDIS_URL and REDIS_URL.startswith("rediss://"):
+    ssl_conf = {
+        'ssl_cert_reqs': ssl.CERT_NONE  # Nécessaire pour Azure Redis parfois
+    }
+    celery_app.conf.broker_use_ssl = ssl_conf
+    celery_app.conf.redis_backend_use_ssl = ssl_conf
+
+
+
 
 @worker_process_init.connect
 def init_worker(**kwargs):

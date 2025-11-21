@@ -9,6 +9,7 @@ tests/
 *.pyo
 *.pyd
 *.sqlite3
+*.sql
 *.log
 *.pot
 *.mo
