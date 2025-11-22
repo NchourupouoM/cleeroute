@@ -22,6 +22,11 @@ app.conf.update(
     enable_utc=True,
     task_time_limit=3600,
     task_soft_time_limit=3000,
+    broker_transport_options={
+        'socket_timeout': 60,
+        'socket_connect_timeout': 60,
+        'visibility_timeout': 3600, 
+    }
 )
 
 logger = logging.getLogger(__name__)
