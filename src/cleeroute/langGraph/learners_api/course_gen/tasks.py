@@ -1,4 +1,3 @@
-from celery import Celery
 from src.cleeroute.db.checkpointer import get_checkpointer, db_pool, PickleSerde
 from src.cleeroute.langGraph.learners_api.course_gen.graph import create_syllabus_generation_graph
 from langgraph.pregel import Pregel
@@ -8,31 +7,16 @@ import asyncio
 import logging
 from google.api_core.exceptions import GoogleAPICallError, RetryError
 
+from src.cleeroute.tasks import celery_app
 
 import os
 from dotenv import load_dotenv
 load_dotenv()
 
-app = Celery('tasks', broker=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"))
-app.conf.update(
-    task_serializer='json',
-    accept_content=['json'],
-    result_serializer='json',
-    timezone='UTC',
-    enable_utc=True,
-    task_time_limit=3600,
-    task_soft_time_limit=3000,
-    broker_transport_options={
-        'socket_timeout': 60,
-        'socket_connect_timeout': 60,
-        'visibility_timeout': 3600, 
-    }
-)
-
 logger = logging.getLogger(__name__)
 
 
-@app.task(bind=True)
+@celery_app.task(bind=True)
 def generate_syllabus_task(self, thread_id: str, youtube_api_key: str):
     try:
         result = asyncio.run(_generate_syllabus_async(thread_id, youtube_api_key))

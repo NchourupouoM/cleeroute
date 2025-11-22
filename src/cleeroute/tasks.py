@@ -1,49 +1,72 @@
 import os
+import ssl
+import asyncio
 from celery import Celery
 from celery.signals import worker_process_init, worker_process_shutdown
 from dotenv import load_dotenv
 from src.cleeroute.db.checkpointer import db_pool
-import asyncio
-import ssl
-# Charger les variables d'environnement pour le worker
+
+# Charger les variables
 load_dotenv()
 
-REDIS_URL = os.getenv("CELERY_BROKER_URL")
+REDIS_URL = os.getenv("CELERY_BROKER_URL", os.getenv("REDIS_URL"))
 
-# 1. Configuration de l'application Celery
+# --- 1. Création de l'application UNIQUE ---
 celery_app = Celery(
-    'cleeroute_tasks', # Nom de l'application
+    'cleeroute_tasks',
     broker=REDIS_URL,
     backend=REDIS_URL,
 )
 
-# Configuration spécifique pour Azure Redis (SSL)
+# --- 2. Configuration Centralisée (SSL + Timeouts) ---
+# On prépare les options de transport (Timeouts)
+transport_opts = {
+    'socket_timeout': 60,
+    'socket_connect_timeout': 60,
+    'visibility_timeout': 3600,
+}
+
+# On prépare la config SSL
+ssl_conf = None
 if REDIS_URL and REDIS_URL.startswith("rediss://"):
     ssl_conf = {
-        'ssl_cert_reqs': ssl.CERT_NONE  # Nécessaire pour Azure Redis parfois
+        'ssl_cert_reqs': ssl.CERT_NONE
     }
-    celery_app.conf.broker_use_ssl = ssl_conf
-    celery_app.conf.redis_backend_use_ssl = ssl_conf
 
+# On applique TOUT à la configuration
+celery_app.conf.update(
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='UTC',
+    enable_utc=True,
+    broker_transport_options=transport_opts, 
+    broker_use_ssl=ssl_conf,               
+    redis_backend_use_ssl=ssl_conf,
+    worker_pool='solo', 
+)
 
-
-
+# --- 3. Gestion du cycle de vie (DB Pool) ---
 @worker_process_init.connect
 def init_worker(**kwargs):
     print("--- [CELERY WORKER LIFECYCLE] Worker process starting. Opening DB pool. ---")
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     loop.run_until_complete(db_pool.open())
 
 @worker_process_shutdown.connect
 def shutdown_worker(**kwargs):
     print("--- [CELERY WORKER LIFECYCLE] Worker process shutting down. Closing DB pool. ---")
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(db_pool.close())
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(db_pool.close())
+    except Exception as e:
+        print(f"Error closing pool: {e}")
 
-
-# Configuration pour que Celery trouve automatiquement les tâches
-celery_app.autodiscover_tasks(
-    packages=[
-        "src.cleeroute.langGraph.learners_api.course_gen"
-    ]
-)
+# Configuration pour trouver les tâches
+celery_app.autodiscover_tasks([
+    "src.cleeroute.langGraph.learners_api.course_gen"
+])
