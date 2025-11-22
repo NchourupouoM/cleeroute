@@ -22,6 +22,6 @@ google-api-python-client
 langchain-openai
 langsmith
 flower
-redis
-celery
+redis==4.6.0
+celery>=5.3.0
 kombu
