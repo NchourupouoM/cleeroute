@@ -3,8 +3,6 @@
 import uuid
 from typing import Dict, Optional
 from .tasks import generate_syllabus_task
-from celery.result import AsyncResult
-from .tasks import app as celery_app
 
 import os
 from fastapi import APIRouter, HTTPException, Body, Depends, BackgroundTasks, Header
