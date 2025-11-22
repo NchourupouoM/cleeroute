@@ -23,6 +23,8 @@ celery_app = Celery(
 transport_opts = {
     'socket_timeout': 60,
     'socket_connect_timeout': 60,
+    'socket_keepalive': True,   
+    'health_check_interval': 10,
     'visibility_timeout': 3600,
 }
 
@@ -40,13 +42,14 @@ celery_app.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    broker_transport_options=transport_opts, 
-    broker_use_ssl=ssl_conf,               
-    redis_backend_use_ssl=ssl_conf,
-    worker_pool='solo', 
+    worker_pool='solo',                 # Mode Solo pour stabilité mémoire/CPU
+    broker_transport_options= transport_opts,
+    broker_use_ssl=ssl_conf,            # Applique SSL au Broker
+    redis_backend_use_ssl=ssl_conf,     # Applique SSL au Backend (résultats)
+    broker_connection_retry_on_startup=True, # Recommandé pour Celery 5+
 )
 
-# --- 3. Gestion du cycle de vie (DB Pool) ---
+# --- 3. Gestion du cycle de vie (DB Pool) ---  
 @worker_process_init.connect
 def init_worker(**kwargs):
     print("--- [CELERY WORKER LIFECYCLE] Worker process starting. Opening DB pool. ---")
