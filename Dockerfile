@@ -12,6 +12,9 @@ WORKDIR /app
 # Installe les dépendances système pour Celery et Redis
 RUN apt-get update && apt-get install -y \
     redis-tools \
+    gcc \
+    build-essential \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
