@@ -145,3 +145,18 @@ class FilteredPlaylistSelection(BaseModel):
         ..., 
         description="A list of the YouTube playlist IDs that have been selected as high-quality and relevant."
     )
+
+class JourneyProgress(BaseModel):
+    current_step: int       # Ex: 2
+    total_steps: int        # Ex: 6
+    percentage: int         # Ex: 33
+    label: str              # Ex: "Searching YouTube"
+    description: str        # Ex: "Analyzing top 50 playlists for relevance..."
+
+class JourneyStatusResponse(BaseModel):
+    status: str
+    thread_id: str
+    output: Optional[Dict] = None
+    next_question: Optional[str] = None
+    # Ajout du champ optionnel pour le tracking
+    progress: Optional[JourneyProgress] = None

@@ -165,7 +165,6 @@ async def process_user_links_node(state: GraphState) -> dict:
     return {"merged_resources_str": serialized_playlists, "status": "user_links_processed"}
 
 
-
 async def search_resources(state: GraphState) -> dict:
     """Searches YouTube for additional playlists using the advanced search and filter service."""
     print("--- Searching for Resources ---")

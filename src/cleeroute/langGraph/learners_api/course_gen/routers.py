@@ -8,6 +8,8 @@ import os
 from fastapi import APIRouter, HTTPException, Body, Depends, BackgroundTasks, Header
 from langgraph.pregel import Pregel
 
+from .config import PROGRESS_MAPPING, TOTAL_STEPS
+
 from .models import (
     SyllabusRequest, 
     SyllabusOptions, 
@@ -19,6 +21,7 @@ from .models import (
 from .state import GraphState, PydanticSerializer
 from .dependencies import get_conversation_graph, get_syllabus_graph
 from .tasks import generate_syllabus_task
+from .models import JourneyProgress, JourneyStatusResponse
 
 # Create a new router instance
 # This allows us to group all related endpoints under a common prefix and tag
@@ -150,8 +153,6 @@ async def generate_syllabus(
         next_question="Syllabus generation has started. Please check the status endpoint in a few moments."
     )
 
-
-
 @syllabus_router.get("/gen_syllabus/{thread_id}/status", response_model=JourneyStatusResponse, summary="Get the status of a journey")
 async def get_journey_status(
     thread_id: str,
@@ -175,51 +176,60 @@ async def get_journey_status(
 
     if final_syllabus_str and final_syllabus_str != 'null':
         try:
-            # --- CORRECTION FINALE ---
-            # On désérialise la chaîne JSON en un objet Pydantic
             syllabus_obj = PydanticSerializer.loads(final_syllabus_str, SyllabusOptions)
+
+            prog_info = PROGRESS_MAPPING["completed"]
+            progress = JourneyProgress(
+                current_step=TOTAL_STEPS,
+                total_steps=TOTAL_STEPS,
+                percentage=100,
+                label=prog_info["label"],
+                description=prog_info["desc"]
+            )
+
             
             if syllabus_obj and syllabus_obj.syllabi:
                 output_dict = syllabus_obj.model_dump()
                 return JourneyStatusResponse(
                     status="completed", 
                     thread_id=thread_id,
-                    output=output_dict 
+                    output=output_dict,
+                    progress=progress
                 )
             else:
-                # Le LLM a retourné un syllabus vide, on le traite comme "en cours" ou "échec".
-                # "generation_failed" est peut-être un meilleur statut.
                 return JourneyStatusResponse(
                     status="generation_failed_empty", 
                     thread_id=thread_id,
-                    output={"syllabi": []}, # On peut retourner le résultat vide
-                    next_question="The syllabus generation resulted in an empty course. You may try again."
+                    output={"syllabi": []},
+                    next_question="The syllabus generation resulted in an empty course.",
+                    progress=progress
                 )
+            
         except Exception as e:
-            # Si le JSON est corrompu, on renvoie une erreur claire
-            print(f"--- ERROR: Failed to parse final syllabus JSON for thread {thread_id}: {e} ---")
-            print(f"--- Corrupted JSON string: {final_syllabus_str} ---")
-            raise HTTPException(status_code=500, detail="Failed to parse the generated syllabus.")
-    else:
-        print(f"--- Syllabus: {final_syllabus_str} ---")
+            print(f"--- ERROR Parsing Final JSON: {e} ---")
+            raise HTTPException(status_code=500, detail="Failed to parse syllabus.")
+    
+    print(f"--- Syllabus: {final_syllabus_str} ---")
 
-        # Le cours n'est pas encore finalisé, on regarde le nœud en cours
-        current_node = state.get('current_node', 'starting')
+    # Le cours n'est pas encore finalisé, on regarde le nœud en cours
+    current_status_key = state.get('status', 'starting')
 
-        # Vous pouvez créer un mapping pour des messages plus conviviaux
-        status_messages = {
-            "generate_search_strategy": "Analyzing your request to create a search plan...",
-            "process_user_links": "Analyzing the links you provided...",
-            "search_resources": "Searching for high-quality content on YouTube...",
-            "merging_ressources":"Merging found resources",
-            "plan_syllabus": "Designing the course structure (this may take a moment)...",
-            "search_for_projects": "Finding suitable project videos for the course...",
-            "finalize_syllabus_json": "Finalizing the course...",
-            "validate_course": "Validating the course structure...",
-            "starting": "Generation is initializing..."
-        }
+    mapping = PROGRESS_MAPPING.get(current_status_key, PROGRESS_MAPPING["starting"])
 
-        return JourneyStatusResponse(
-            status=state.get('status', 'in_progress'),
-            thread_id=thread_id
-        )
+    percent = int((mapping["step"] / TOTAL_STEPS) * 100)
+
+    # Création de l'objet progression
+    progress_data = JourneyProgress(
+        current_step=mapping["step"],
+        total_steps=TOTAL_STEPS,
+        percentage=percent,
+        label=mapping["label"],
+        description=mapping["desc"]
+    )
+
+    return JourneyStatusResponse(
+        status="in_progress",
+        thread_id=thread_id,
+        progress=progress_data
+
+    )
