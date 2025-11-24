@@ -1,43 +1,63 @@
-# In services.py
-
 import os
 import json
-from typing import List, Optional
 import asyncio
-
-from googleapiclient.discovery import build
-from functools import lru_cache
-
-from googleapiclient.errors import HttpError
-from langchain_google_genai import ChatGoogleGenerativeAI
-import httpx
-from .models import AnalyzedPlaylist, VideoInfo, FilteredPlaylistSelection
-from .prompt import Prompts
+import re
+from typing import List, Optional
 from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
-import re
+
+# Google / YouTube Imports
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+# Internal Imports
+from .models import AnalyzedPlaylist, VideoInfo, FilteredPlaylistSelection
+from .prompt import Prompts
+
 load_dotenv()
 
-# It's good practice to initialize the LLM and YouTube service once
-# if the service is called multiple times.
-llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"), max_tokens=8192)
-
+# Vérification de la clé API au chargement du module
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 if not YOUTUBE_API_KEY:
     raise ValueError("YOUTUBE_API_KEY must be set in env")
 
-import httplib2
-import ssl
+# ==============================================================================
+# FACTORY FUNCTIONS (CRITIQUE POUR LA CONCURRENCE)
+# ==============================================================================
 
-# Désactive la vérification SSL (UNIQUEMENT POUR LE DÉBOGAGE)
+def get_youtube_service():
+    """
+    Crée une NOUVELLE instance du client YouTube pour chaque appel.
+    Ceci est indispensable car google-api-python-client (httplib2) n'est pas thread-safe.
+    """
+    return build('youtube', 'v3', developerKey=os.getenv("YOUTUBE_API_KEY"), cache_discovery=False)
 
-youtube_service = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
-YOUTUBE_API_TIMEOUT = 60
+def get_llm():
+    """
+    Crée une NOUVELLE instance du LLM pour éviter les erreurs de boucle d'événements (gRPC).
+    """
+    return ChatGoogleGenerativeAI(
+        model=os.getenv("MODEL_2", "gemini-2.5-flash"),
+        google_api_key=os.getenv("GEMINI_API_KEY"),
+        max_tokens=8192
+    )
+
+# ==============================================================================
+# URL UTILITIES
+# ==============================================================================
+
+YOUTUBE_URL_REGEX = re.compile(
+    r"(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})"
+)
+
+def get_video_id_from_url(url: str) -> Optional[str]:
+    """Extracts the YouTube video ID from various URL formats."""
+    match = YOUTUBE_URL_REGEX.search(url)
+    return match.group(1) if match else None
 
 def classify_youtube_url(url: str) -> str:
-    """
-    Classifies a YouTube URL as 'playlist', 'video', or 'unknown'.
-    """
+    """Classifies a YouTube URL as 'playlist', 'video', or 'unknown'."""
     try:
         parsed_url = urlparse(url)
         query_params = parse_qs(parsed_url.query)
@@ -52,56 +72,75 @@ def classify_youtube_url(url: str) -> str:
         print(f"--- ERROR classifying URL {url}: {e}. Returning 'unknown'. ---")
         return 'unknown'
 
+# ==============================================================================
+# PLAYLIST SERVICES
+# ==============================================================================
 
 async def fetch_playlist_details(playlist_url: str) -> Optional[AnalyzedPlaylist]:
     """
     Fetches details for a single playlist given its full URL.
-    Extracts the playlist ID from the URL.
     """
     try:        
-        playlist_id = playlist_url.split("list=")[1]
-        return await _fetch_playlist_items(playlist_id)
-    except (IndexError, HttpError) as e:
-        print(f"Error fetching or parsing playlist URL {playlist_url}: {e}")
+        if "list=" in playlist_url:
+            playlist_id = playlist_url.split("list=")[1]
+            # Nettoyage basique au cas où d'autres params suivent
+            if "&" in playlist_id:
+                playlist_id = playlist_id.split("&")[0]
+            return await _fetch_playlist_items(playlist_id)
+        else:
+            print(f"--- WARNING: Invalid playlist URL format: {playlist_url} ---")
+            return None
+    except Exception as e:
+        print(f"Error parsing playlist URL {playlist_url}: {e}")
         return None
 
 async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
+    """
+    Internal function to fetch playlist items using a thread-local service instance.
+    """
     try:
-        # Utilisez un timeout plus long pour la requête
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            # Récupérez les métadonnées de la playlist
-            playlist_request = youtube_service.playlists().list(part="snippet", id=playlist_id)
-            playlist_response = await asyncio.wait_for(
-                asyncio.to_thread(playlist_request.execute),
-                timeout=60.0
-            )
+        # Exécution dans un thread séparé pour ne pas bloquer la boucle asyncio
+        # et pour isoler l'instance du service (httplib2)
+        def fetch_sync():
+            local_service = get_youtube_service()
+            
+            # 1. Récupérer les métadonnées de la playlist
+            pl_request = local_service.playlists().list(part="snippet", id=playlist_id)
+            pl_response = pl_request.execute()
 
-            if not playlist_response.get("items"):
-                print(f"--- WARNING: Playlist with ID {playlist_id} not found or is empty. Skipping. ---")
+            if not pl_response.get("items"):
+                print(f"--- WARNING: Playlist {playlist_id} not found or empty. ---")
                 return None
 
-            playlist_info = playlist_response['items'][0]['snippet']
+            playlist_info = pl_response['items'][0]['snippet']
             playlist_title = playlist_info['title']
             playlist_description = playlist_info.get('description')
 
-            # Récupérez les vidéos de la playlist
+            # 2. Récupérer les vidéos (Pagination)
             video_infos = []
             next_page_token = None
+            
+            # On limite à 2 pages (100 vidéos max) pour la performance, sauf si besoin absolu
+            pages_limit = 2 
+            current_page = 0
+
             while True:
-                request = youtube_service.playlistItems().list(
+                if current_page >= pages_limit:
+                    break
+
+                vid_request = local_service.playlistItems().list(
                     part="snippet,contentDetails",
                     playlistId=playlist_id,
                     maxResults=50,
                     pageToken=next_page_token
                 )
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(request.execute),
-                    timeout=60.0
-                )
+                vid_response = vid_request.execute()
 
-                for item in response.get("items", []):
+                for item in vid_response.get("items", []):
                     snippet = item.get("snippet", {})
                     video_id = snippet.get("resourceId", {}).get("videoId")
+                    
+                    # Ignorer les vidéos supprimées ou privées
                     if video_id:
                         thumbnails = snippet.get("thumbnails", {})
                         thumbnail_url = (
@@ -111,17 +150,19 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
                             thumbnails.get("medium", {}) or
                             thumbnails.get("default", {})
                         ).get("url")
+                        
                         video_infos.append(
                             VideoInfo(
-                                title=snippet.get("title"),
-                                description=snippet.get("description"),
+                                title=snippet.get("title", "Unknown Title"),
+                                description=snippet.get("description", ""),
                                 video_url=f"https://www.youtube.com/watch?v={video_id}",
                                 channel_title=snippet.get("videoOwnerChannelTitle"),
                                 thumbnail_url=thumbnail_url,
                             )
                         )
 
-                next_page_token = response.get('nextPageToken')
+                next_page_token = vid_response.get('nextPageToken')
+                current_page += 1
                 if not next_page_token:
                     break
 
@@ -131,46 +172,64 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
                 playlist_description=playlist_description,
                 videos=video_infos
             )
-    except asyncio.TimeoutError:
-        print(f"--- Timeout lors de la récupération de la playlist {playlist_id} ---")
-        return None
+
+        # Lancement asynchrone du bloc synchrone
+        return await asyncio.to_thread(fetch_sync)
+
     except HttpError as e:
-        print(f"Erreur HTTP lors de la récupération de la playlist {playlist_id}: {e}")
+        print(f"--- HTTP Error fetching playlist {playlist_id}: {e} ---")
         return None
     except Exception as e:
-        print(f"Erreur inattendue lors de la récupération de la playlist {playlist_id}: {e}")
+        print(f"--- Unexpected Error fetching playlist {playlist_id}: {e} ---")
         return None
+
+# ==============================================================================
+# SEARCH & FILTER SERVICES
+# ==============================================================================
 
 async def search_and_filter_youtube_playlists(queries: List[str], user_input: str):
     print("--- Starting High-Quality YouTube Search ---")
 
     async def search_task(query: str):
+        """Fonction interne pour exécuter une recherche unique de manière isolée."""
         try:
-            request = youtube_service.search().list(
-                q=query, part="snippet", type="playlist", maxResults=50, order="date"
+            # Instanciation locale pour thread-safety
+            local_service = get_youtube_service()
+            
+            request = local_service.search().list(
+                q=query, 
+                part="snippet", 
+                type="playlist", 
+                maxResults=50, 
+                order="date" # ou "relevance" selon le besoin
             )
-            # Utilisez un client HTTP avec un timeout plus long
-            response = await asyncio.to_thread(request.execute)
-
-            return response
+            # Exécution bloquante dans un thread
+            return await asyncio.to_thread(request.execute)
+            
         except HttpError as e:
-            print(f"Erreur HTTP lors de la recherche pour '{query}': {e}")
+            print(f"--- Search HTTP Error '{query}': {e} ---")
             return None
         except Exception as e:
-            print(f"Erreur inattendue lors de la recherche pour '{query}': {e}")
+            print(f"--- Search Generic Error '{query}': {e} ---")
             return None
 
     try:
+        # 1. Exécution parallèle des recherches
         search_tasks = [search_task(query) for query in queries]
-        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+        # Timeout global de 60s pour toutes les recherches
+        search_results = await asyncio.wait_for(
+            asyncio.gather(*search_tasks, return_exceptions=True),
+            timeout=60.0
+        )
 
         candidate_playlists = []
         unique_ids = set()
 
+        # 2. Agrégation des résultats
         for response in search_results:
-            if not response or isinstance(response, Exception):
+            if response is None or isinstance(response, Exception):
                 continue
-            
+                
             for item in response.get("items", []):
                 playlist_id = item["id"]["playlistId"]
                 if playlist_id not in unique_ids:
@@ -187,9 +246,11 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
             print("--- No playlist candidates found. ---")
             return []
 
+        # Tri par date (les plus récents d'abord) et sélection des 40 premiers pour le filtre
         candidate_playlists.sort(key=lambda p: p['publishedAt'], reverse=True)
         newest_candidates = candidate_playlists[:40]
 
+        # 3. Filtrage Intelligent via LLM
         candidates_str = json.dumps(newest_candidates, indent=2)
         prompt = Prompts.FILTER_YOUTUBE_PLAYLISTS.format(
             user_input=user_input,
@@ -198,50 +259,52 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
 
         selected_ids = []
         try:
-            structured_llm = llm.with_structured_output(FilteredPlaylistSelection)
+            # Instanciation locale du LLM
+            local_llm = get_llm()
+            structured_llm = local_llm.with_structured_output(FilteredPlaylistSelection)
+            
             llm_response = await structured_llm.ainvoke(prompt)
 
             if llm_response and hasattr(llm_response, 'selected_ids'):
                 selected_ids = llm_response.selected_ids
                 print(f"--- LLM selected {len(selected_ids)} playlists: {selected_ids} ---")
             else:
-                print(f"--- WARNING: LLM filter step returned an invalid response or None. ---")
-                selected_ids = [p['id'] for p in newest_candidates[:10]]
-                print(f"--- Fallback: Selecting the 10 most recent playlists: {selected_ids} ---")
+                print(f"--- WARNING: LLM filter returned invalid response. Fallback to top 5. ---")
+                selected_ids = [p['id'] for p in newest_candidates[:5]]
         except Exception as e:
-            print(f"--- ERROR during LLM filter step: {e}. ---")
-            selected_ids = [p['id'] for p in newest_candidates[:10]]
-            print(f"--- Fallback: Selecting the 5 most recent playlists: {selected_ids} ---")
+            print(f"--- ERROR during LLM filter: {e}. Fallback to top 5. ---")
+            selected_ids = [p['id'] for p in newest_candidates[:5]]
 
+        # 4. Récupération des détails complets pour les playlists sélectionnées
+        # On limite à 10 pour ne pas surcharger le système
         final_playlists = []
-        for playlist_id in selected_ids[:10]:
-            playlist_details = await _fetch_playlist_items(playlist_id)
-            if playlist_details:
-                final_playlists.append(playlist_details)
+        
+        # On parallélise aussi la récupération des détails
+        detail_tasks = [_fetch_playlist_items(pid) for pid in selected_ids[:10]]
+        detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
+        
+        for res in detail_results:
+            if res and isinstance(res, AnalyzedPlaylist):
+                final_playlists.append(res)
 
         print(f"--- Successfully fetched details for {len(final_playlists)} final playlists. ---")
         return final_playlists
+
+    except asyncio.TimeoutError:
+        print("--- GLOBAL TIMEOUT during YouTube Search (60s limit reached). ---")
+        return []
     except Exception as e:
-        print(f"--- ERROR during YouTube search: {e} ---")
+        print(f"--- CRITICAL ERROR during Search Process: {e} ---")
         return []
 
-YOUTUBE_URL_REGEX = re.compile(
-    r"(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})"
-)
-
-
-def get_video_id_from_url(url: str) -> Optional[str]:
-    """
-    Extracts the YouTube video ID from various URL formats using a pre-compiled regex.
-    """
-    match = YOUTUBE_URL_REGEX.search(url)
-    return match.group(1) if match else None
+# ==============================================================================
+# SINGLE VIDEO SERVICE
+# ==============================================================================
 
 async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
     """
     Analyzes a single user-provided YouTube video URL.
-    Fetches its details like title, description, channel, and thumbnail.
-    This function is designed to be called concurrently with other async tasks.
+    Fetches details using a thread-local service instance.
     """
     video_id = get_video_id_from_url(video_url)
     if not video_id:
@@ -251,24 +314,24 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
     print(f"--- Analyzing single video (ID: {video_id}) ---")
     
     try:
-        # 1. Créer la requête de manière synchrone
-        video_request = youtube_service.videos().list(
-            part="snippet,contentDetails",
-            id=video_id
-        )
-        
-        # 2. Exécuter la requête bloquante dans un thread séparé pour ne pas geler l'application
-        video_response = await asyncio.to_thread(video_request.execute)
+        def fetch_video_sync():
+            local_service = get_youtube_service()
+            vid_request = local_service.videos().list(
+                part="snippet,contentDetails",
+                id=video_id
+            )
+            return vid_request.execute()
+
+        # Exécution dans un thread
+        video_response = await asyncio.to_thread(fetch_video_sync)
         
         if not video_response.get("items"):
-            print(f"--- WARNING: Video with ID {video_id} not found or is private. Skipping. ---")
+            print(f"--- WARNING: Video {video_id} not found or private. ---")
             return None
         
-        # 3. Extraire les métadonnées de la réponse
         item = video_response["items"][0]
         snippet = item["snippet"]
         
-        # Sélection de la meilleure miniature disponible
         thumbnails = snippet.get("thumbnails", {})
         thumbnail_url = (
             thumbnails.get("maxres", {}) or
@@ -278,9 +341,8 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
             thumbnails.get("default", {})
         ).get("url")
 
-        # 4. Construire et retourner l'objet Pydantic
         return VideoInfo(
-            title=snippet.get("title", "No Title Provided"),
+            title=snippet.get("title", "No Title"),
             description=snippet.get("description"),
             video_url=f"https://www.youtube.com/watch?v={video_id}",
             channel_title=snippet.get("channelTitle"),
@@ -288,8 +350,8 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
         )
         
     except HttpError as e:
-        print(f"--- ERROR (HttpError) analyzing video {video_id}: {e} ---")
+        print(f"--- HTTP Error analyzing video {video_id}: {e} ---")
         return None
     except Exception as e:
-        print(f"--- ERROR (Unexpected) analyzing video {video_id}: {e} ---")
+        print(f"--- Unexpected Error analyzing video {video_id}: {e} ---")
         return None

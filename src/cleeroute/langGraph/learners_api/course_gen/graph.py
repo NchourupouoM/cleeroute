@@ -21,20 +21,21 @@ import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
 load_dotenv()
 
-# Initialize the LLM
-llm = ChatGoogleGenerativeAI(
-    model=os.getenv("MODEL_2", "gemini-2.5-flash"), 
-    google_api_key=os.getenv("GEMINI_API_KEY"),
-    max_tokens=8192,
-    temperature=0.3
-)
+def get_llm():
+    return ChatGoogleGenerativeAI(
+        model=os.getenv("MODEL_2", "gemini-2.5-flash"), 
+        google_api_key=os.getenv("GEMINI_API_KEY"),
+        max_tokens=8192,
+        temperature=0.3
+    )
 
 # google api
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 if not YOUTUBE_API_KEY:
     raise ValueError("YOUTUBE_API_KEY must be set in env")
 
-youtube_service = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
+def get_youtube_service():
+    return build('youtube', 'v3', developerKey=os.getenv("YOUTUBE_API_KEY"))
 
 # checkpointer = get_checkpointer()
 
@@ -62,7 +63,7 @@ async def generate_search_strategy(state: GraphState) -> dict:
     """Generates YouTube search queries based on user input."""
     print("--- Generating Search Strategy ---")
     metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
-
+    llm = get_llm()
     history_tuples = state.get('conversation_history', [])
     conversation_summary = "\n".join([f"- Human: {h}\n- AI: {a}" for h, a in history_tuples])
 
@@ -198,7 +199,7 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
     print("--- Conducting Intelligent Conversation ---")
     history_tuples = state.get('conversation_history', [])
     history_str = "\n".join([f"Human: {h}\nAI: {a}" for h, a in history_tuples])
-
+    llm = get_llm()
     # # On désérialise les métadonnées pour les rendre lisibles
     metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
     
@@ -326,6 +327,8 @@ async def plan_syllabus(state: GraphState) -> dict:
             playlist_videos_summary=playlist_videos_summary,
             retry_instruction=retry_instruction
         )
+
+        llm = get_llm()
         
         try:
             # Appel LLM concurrent
@@ -370,8 +373,12 @@ async def find_and_search_project_videos(state: GraphState) -> dict:
 
     found_videos_map = {}
     print(f"--- Found {len(placeholders)} project video placeholders to search for. ---")
+     
+    youtube_service = get_youtube_service()
+
 
     for query in placeholders:
+
         try:
             request = youtube_service.search().list(
                 q=f"{query} tutorial project",
@@ -562,7 +569,7 @@ async def generate_json_from_plan(state: GraphState) -> dict:
         video_map=video_map_json_str,
         conversation_summary=conversation_summary
     )
-    
+    llm = get_llm()
     structured_llm = llm.with_structured_output(SyllabusOptions)
     try:
         syllabus_options = await structured_llm.ainvoke(prompt)
