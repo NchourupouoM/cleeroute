@@ -585,7 +585,9 @@ def create_syllabus_generation_graph(checkpointer=None):
     Creates a non-interactive graph that takes a finished conversation state
     and generates the final syllabus.
     """
-    checkpointer = get_checkpointer()
+    if checkpointer is None:
+        checkpointer = get_checkpointer()
+    
     workflow = StateGraph(GraphState)
 
     # --- Nœuds ---

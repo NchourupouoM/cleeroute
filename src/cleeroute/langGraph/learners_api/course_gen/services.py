@@ -150,11 +150,8 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
                 q=query, part="snippet", type="playlist", maxResults=50, order="date"
             )
             # Utilisez un client HTTP avec un timeout plus long
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(request.execute),
-                    timeout=60.0  # Augmentez le timeout à 60 secondes
-                )
+            response = await asyncio.to_thread(request.execute)
+
             return response
         except HttpError as e:
             print(f"Erreur HTTP lors de la recherche pour '{query}': {e}")
@@ -171,8 +168,9 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
         unique_ids = set()
 
         for response in search_results:
-            if response is None:
+            if not response or isinstance(response, Exception):
                 continue
+            
             for item in response.get("items", []):
                 playlist_id = item["id"]["playlistId"]
                 if playlist_id not in unique_ids:
@@ -226,10 +224,6 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
     except Exception as e:
         print(f"--- ERROR during YouTube search: {e} ---")
         return []
-
-
-
-
 
 YOUTUBE_URL_REGEX = re.compile(
     r"(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})"
