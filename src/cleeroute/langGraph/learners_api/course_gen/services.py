@@ -206,11 +206,11 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
                 print(f"--- LLM selected {len(selected_ids)} playlists: {selected_ids} ---")
             else:
                 print(f"--- WARNING: LLM filter step returned an invalid response or None. ---")
-                selected_ids = [p['id'] for p in newest_candidates[:5]]
-                print(f"--- Fallback: Selecting the 5 most recent playlists: {selected_ids} ---")
+                selected_ids = [p['id'] for p in newest_candidates[:10]]
+                print(f"--- Fallback: Selecting the 10 most recent playlists: {selected_ids} ---")
         except Exception as e:
             print(f"--- ERROR during LLM filter step: {e}. ---")
-            selected_ids = [p['id'] for p in newest_candidates[:5]]
+            selected_ids = [p['id'] for p in newest_candidates[:10]]
             print(f"--- Fallback: Selecting the 5 most recent playlists: {selected_ids} ---")
 
         final_playlists = []
