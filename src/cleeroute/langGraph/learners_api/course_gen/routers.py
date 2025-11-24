@@ -31,7 +31,10 @@ syllabus_router = APIRouter()
     "/gen_syllabus", 
     response_model=StartJourneyResponse,
     summary="Start a new learning journey",
-    status_code=201  # Use 201 Created for new resource creation
+    responses={
+        201: {"description": "Session created and first AI question generated."},
+        500: {"description": "Internal server error during graph initialization."}
+    }
 )
 async def start_learning_journey(
     request: SyllabusRequest,
@@ -39,8 +42,19 @@ async def start_learning_journey(
     app_graph: Pregel = Depends(get_conversation_graph)  # Dependency injection for the graph
 ):
     """
-    Starts a new syllabus generation journey. This initializes the stateful graph
-    and returns the first question for the human-in-the-loop process.
+        **Initializes the Learning Journey and starts the Human-in-the-Loop (HITL) conversation.**
+
+        This is the entry point of the system. It takes the user's initial intent and resources, sets up the execution environment, and triggers the AI consultant to ask the first clarifying question.
+
+        **Process:**
+        1.  **Initialization:** Generates a unique `thread_id` for this session.
+        2.  **Data Processing:** Parses provided YouTube links (playlists/videos) and metadata.
+        3.  **Graph Execution:** Starts the `ConversationGraph`. The AI analyzes the input and formulates a strategy.
+        4.  **Interruption:** The graph runs until the AI needs more information from the user.
+
+        **Returns:**
+        - `thread_id`: The session identifier (CRITICAL: save this for subsequent calls).
+        - `next_question`: The first question the AI asks the learner to refine their needs.
     """
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
@@ -79,13 +93,37 @@ async def start_learning_journey(
 @syllabus_router.post(
     "/gen_syllabus/{thread_id}/continue", 
     response_model=JourneyStatusResponse,
-    summary="Continue an existing journey"
+    summary="Continue the Conversation (Answer AI)",
+    responses={
+        200: {"description": "Answer processed. Returns next question or finish status."},
+        404: {"description": "Session thread not found."},
+        500: {"description": "Graph execution error."}
+    }
 )
 async def continue_learning_journey(
     thread_id: str,
     request: ContinueJourneyRequest,
     app_graph: Pregel = Depends(get_conversation_graph)
 ):
+    """
+        **Submits the user's answer to the AI and advances the conversation.**
+
+        Use this endpoint to reply to the `next_question` received from the previous step. The AI will analyze the answer and decide whether to ask another question or finalize the profile.
+
+        **Process:**
+        1.  **State Retrieval:** Loads the conversation history using `thread_id`.
+        2.  **Update:** Appends the user's answer to the history.
+        3.  **Reasoning:** The AI evaluates if it has enough information.
+            *   *If NO:* It generates a new follow-up question.
+            *   *If YES:* It marks the conversation as finished.
+
+        **Returns:**
+        - `status`: 
+            - `"in_progress"`: The AI has another question for you.
+            - `"conversation_finished"`: The AI has gathered enough info. You should now call the `/course` endpoint to generate the syllabus.
+        - `next_question`: The text of the next question (if in_progress).
+    """
+    
     config = {"configurable": {"thread_id": thread_id}}
 
     current_snapshot = await app_graph.aget_state(config)
@@ -139,11 +177,35 @@ async def continue_learning_journey(
 
 
 # --- NOUVEL ENDPOINT 3 ---
-@syllabus_router.post("/gen_syllabus/{thread_id}/course", response_model=JourneyStatusResponse, status_code=202)
+@syllabus_router.post("/gen_syllabus/{thread_id}/course", response_model=JourneyStatusResponse, status_code=202, summary="Trigger Asynchronous Syllabus Generation",responses={
+        202: {"description": "Generation task accepted and queued in background."},
+        404: {"description": "Conversation thread not found."},
+})
 async def generate_syllabus(
     thread_id: str,
     x_youtube_api_key: Optional[str] = Header(None, alias="X-Youtube-Api-Key"),
 ):
+    
+    """
+        **Triggers the heavy background process to generate the full course syllabus.**
+
+        This endpoint should ONLY be called after the conversation status is `"conversation_finished"`.
+        
+        **Mechanism:**
+        - This is an **asynchronous** operation.
+        - It does NOT return the syllabus immediately.
+        - It dispatches a task to a **Celery Worker** via Redis.
+        - The worker will perform YouTube searches, analysis, and syllabus structuring (taking 1-2 minutes).
+
+        **Process:**
+        1.  **State Handover:** Retrieves the final learner profile from the `ConversationGraph` state.
+        2.  **Task Dispatch:** Sends all necessary data to the Celery worker queue.
+        3.  **Immediate Return:** Returns a 202 Accepted status to unblock the UI.
+
+        **Next Steps:**
+        - The client must poll the **GET /gen_syllabus/{thread_id}/status** endpoint every few seconds to check progress and retrieve the final JSON result.
+    """
+
     # Lancement de la tâche Celery
     task = generate_syllabus_task.delay(thread_id, x_youtube_api_key)
     print(f"Tâche envoyée à Celery avec l'ID: {task.id}")  # Log pour confirmer l'envoi
@@ -159,6 +221,32 @@ async def get_journey_status(
     # On peut utiliser n'importe quel graphe qui partage le même checkpointer
     app_graph: Pregel = Depends(get_syllabus_graph)
 ):
+    """
+        **Checks the progress of the background syllabus generation task.**
+
+        Since generation is asynchronous, the frontend must poll this endpoint every few seconds (e.g., every 3-5s) after calling `/course`.
+
+        **Capabilities:**
+        1.  **Real-time Tracking:** It looks into the graph's memory to tell you exactly what the AI is doing right now (e.g., "Searching YouTube", "Drafting Blueprint").
+        2.  **Result Retrieval:** Once finished, it delivers the final JSON syllabus.
+
+        **Return Values (Status):**
+        - `in_progress`: The worker is still busy. The `next_question` field will contain a user-friendly status message (e.g., "Analyzing your request...").
+        - `completed`: Success! The `output` field contains the full `SyllabusOptions` JSON object. Stop polling.
+        - `completed_empty`: The process finished but found no content. The `output` field is empty.
+
+        **return values (progress)**:
+        - `current_step`: The current step in the generation process.
+        - `total_steps`: The total number of steps.
+        - `percentage`: The completion percentage.
+        - `label`: A user-friendly status message (e.g., "Analyzing your request...").
+        - `description`: A more detailed description of the current step.
+
+        **Client Logic:**
+        - IF `status` == `in_progress`: Display `next_question` as a loading toast/spinner text. Wait 3s. Call again.
+        - IF `status` == `completed`: Display the course selection UI using `output`.
+    """
+
     config = {"configurable": {"thread_id": thread_id}}
 
     try:

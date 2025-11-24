@@ -37,18 +37,29 @@ quiz_router = APIRouter()
 # ==============================================================================
 # ENDPOINT 1: Démarrer une Nouvelle Tentative de Quiz
 # ==============================================================================
-@quiz_router.post("/quiz-attempts", response_model=QuizAttemptResponse, status_code=201)
+@quiz_router.post("/quiz-attempts", response_model=QuizAttemptResponse, status_code=201, summary="Initiate a New Quiz Session",responses={
+        201: {"description": "Quiz successfully created and questions generated."},
+        500: {"description": "Failed to generate questions via AI or save to database."}
+    })
 async def start_quiz_attempt(
     request: StartQuizRequest, 
     graph: Pregel = Depends(get_quiz_graph),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    Initialise une session de quiz :
-    1. Prépare l'état initial pour le graphe LangGraph.
-    2. Exécute le graphe pour générer le titre et les questions.
-    3. Enregistre la nouvelle tentative de quiz dans la base de données applicative.
-    4. Retourne l'identifiant de la tentative et les questions à l'utilisateur.
+        **Starts a new interactive quiz session.**
+        
+        This endpoint orchestrates the creation of a personalized quiz based on the provided context (course, section, or video).
+        
+        **Process:**
+        1.  **AI Generation:** Invokes the LangGraph workflow to generate a unique title and a set of questions using Gemini, tailored to the learner's preferences (difficulty, count).
+        2.  **Persistence:** Saves the new quiz attempt in the application database with a status of `started`.
+        3.  **State Initialization:** Initializes a persistent LangGraph thread (`attemptId`) to manage the quiz state and chat history.
+        
+        **Returns:**
+        - A unique `attemptId` (used for all subsequent interactions).
+        - The full list of generated questions (without answers).
+        - An empty initial chat history.
     """
     attempt_id = f"attempt_{uuid.uuid4()}"
     config = {"configurable": {"thread_id": attempt_id}}
@@ -119,12 +130,31 @@ async def start_quiz_attempt(
     )
 
 
-@quiz_router.post("/quiz-attempts/{attemptId}/answer", response_model=ChatHistoryResponse)
+@quiz_router.post("/quiz-attempts/{attemptId}/answer", response_model=ChatHistoryResponse, summary="Submit an Answer to a Question",responses={
+        200: {"description": "Answer processed and feedback returned."},
+        404: {"description": "Quiz session not found (invalid attemptId)."},
+        500: {"description": "Internal processing error."}
+    })
 async def submit_answer(
     attemptId: str,
     request: AnswerRequest,
     graph: Pregel = Depends(get_quiz_graph)
 ):
+    
+    """
+        **Submits a user's answer for evaluation.**
+        
+        This endpoint is part of the interactive loop. It sends the user's selected option to the AI tutor.
+        
+        **Process:**
+        1.  **Evaluation:** The AI compares the user's answer with the correct option.
+        2.  **Feedback Generation:** The AI generates personalized feedback (reinforcing concepts if correct, explaining mistakes if incorrect).
+        3.  **State Update:** Updates the persistent chat history and records the user's performance for this question.
+        
+        **Returns:**
+        - The updated `chatHistory` containing the user's action and the AI's immediate feedback.
+    """
+
     config = {"configurable": {"thread_id": attemptId}}
 
     update_payload = {
@@ -179,14 +209,28 @@ async def submit_answer(
     return ChatHistoryResponse(chatHistory=chat_history_list)
 
 
-@quiz_router.get("/quiz-attempts/{attemptId}/questions/{questionId}/hint", response_model=ChatHistoryResponse)
+@quiz_router.get("/quiz-attempts/{attemptId}/questions/{questionId}/hint", response_model=ChatHistoryResponse,     summary="Request a Hint for a Question",responses={
+        200: {"description": "Hint generated and added to chat."},
+        404: {"description": "Quiz session or question not found."},
+    }
+)
 async def get_hint(
     attemptId: str, 
     questionId: str, 
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
-    Demande un indice pour une question, et retourne l'historique du chat mis à jour.
+        **Asks the AI Tutor for a hint regarding a specific question.**
+        
+        Use this when the learner is stuck. The AI provides a nudge in the right direction without revealing the full answer.
+        
+        **Process:**
+        1.  **Context Retrieval:** Retrieves the question context from the graph state.
+        2.  **AI Generation:** Generates a helpful hint based on the question's explanation.
+        3.  **State Update:** Appends the hint interaction to the persistent chat history.
+        
+        **Returns:**
+        - The updated `chatHistory` including the newly generated hint.
     """
     config = {"configurable": {"thread_id": attemptId}}
     
@@ -227,14 +271,27 @@ async def get_hint(
 # ==============================================================================
 # ENDPOINT 4: Poser une Question de Suivi
 # ==============================================================================
-@quiz_router.post("/quiz-attempts/{attemptId}/ask", response_model=ChatHistoryResponse)
+@quiz_router.post("/quiz-attempts/{attemptId}/ask", response_model=ChatHistoryResponse, summary="Ask a Free-form Follow-up Question",responses={
+        200: {"description": "AI response generated and added to chat."},
+        404: {"description": "Quiz session not found."},
+    })
 async def ask_follow_up(
     attemptId: str, 
     request: AskRequest, 
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
-    Pose une question ouverte à l'IA et retourne l'historique du chat mis à jour.
+        **Allows the learner to ask a free-text question to the AI Tutor.**
+        
+        This turns the quiz into a conversational learning experience. The learner can ask for clarification on a specific question or a general concept related to the quiz.
+        
+        **Process:**
+        1.  **Contextual Analysis:** The AI analyzes the user's query in the context of the current quiz and previous chat history.
+        2.  **Response Generation:** Generates a detailed explanation or answer.
+        3.  **State Update:** Appends the Q&A exchange to the chat history.
+        
+        **Returns:**
+        - The updated `chatHistory` with the user's query and the AI's response.
     """
     config = {"configurable": {"thread_id": attemptId}}
     
@@ -258,14 +315,29 @@ async def ask_follow_up(
 # ==============================================================================
 # ENDPOINT 5: Obtenir le Résumé Final du Quiz
 # ==============================================================================
-@quiz_router.get("/quiz-attempts/{attemptId}/summary", response_model=ChatHistoryResponse)
+@quiz_router.get("/quiz-attempts/{attemptId}/summary", response_model=ChatHistoryResponse, summary="Finish Quiz and Get Summary",responses={
+        200: {"description": "Quiz completed, score calculated, and summary generated."},
+        404: {"description": "Quiz session not found."},
+        500: {"description": "Failed to update score in database."}
+    })
 async def get_summary(
     attemptId: str, 
     graph: Pregel = Depends(get_quiz_graph),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    Calcule le score final, génère un résumé, et retourne l'historique du chat complété.
+        **Finalizes the quiz attempt and provides a performance recap.**
+        
+        This endpoint should be called when the user finishes all questions or decides to stop the quiz.
+        
+        **Process:**
+        1.  **Scoring:** Calculates the final score (pass/fail/skipped counts) based on the session state.
+        2.  **AI Recap:** Generates a personalized encouraging message and summary based on performance.
+        3.  **DB Update:** Updates the `quiz_attempts` table in the application database, marking the status as `completed` and saving the score.
+        4.  **Chat Finalization:** Appends a special `recap` message to the chat history.
+        
+        **Returns:**
+        - The final `chatHistory` containing the summary card data.
     """
     config = {"configurable": {"thread_id": attemptId}}
 
@@ -321,14 +393,25 @@ async def get_summary(
 # ==============================================================================
 # ENDPOINT 6: Obtenir la Liste des Quiz pour un Cours
 # ==============================================================================
-@quiz_router.get("/courses/{threadId}/quizzes", response_model=List[QuizzesForCourseResponse])
+@quiz_router.get("/courses/{threadId}/quizzes", response_model=List[QuizzesForCourseResponse], summary="Get Quiz History for a Course",responses={
+        200: {"description": "List of quizzes retrieved successfully."},
+        500: {"description": "Database error."}
+    })
 async def get_quizzes_for_course(
     threadId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    Récupère un résumé de toutes les tentatives de quiz pour un cours donné
-    en interrogeant la base de données applicative.
+        **Retrieves the history of all quiz attempts associated with a specific course.**
+        
+        This is a read-only endpoint used to display a list of past quizzes to the user (e.g., on a dashboard or course sidebar).
+        
+        **Process:**
+        - Queries the application database (`quiz_attempts` table) filtering by the Course's `threadId`.
+        - Orders results by creation date (newest first).
+        
+        **Returns:**
+        - A list of quiz summaries (Attempt ID, Title, Pass Percentage).
     """
     try:
         # 1. On exécute la requête pour obtenir un curseur
