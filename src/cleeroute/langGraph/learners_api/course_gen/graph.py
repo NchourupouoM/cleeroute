@@ -242,36 +242,84 @@ def should_continue_conversation(state: GraphState) -> Literal["continue_convers
         return "end_conversation"
     return "continue_conversation"
 
+# async def plan_syllabus(state: GraphState) -> dict:
+#     """
+#     Generates a syllabus blueprint by iterating through each playlist and
+#     calling the LLM once per playlist for maximum reliability.
+#     """
+#     print("--- Planning Syllabus Structure (Iterative Approach) ---")
+    
+#     merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
+#     if not merged_playlists_json_str or merged_playlists_json_str == "[]":
+#         return {"syllabus_blueprint_str": ""} # Cas où il n'y a aucune ressource
+
+#     # 1. Charger toutes les playlists
+#     playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
+#     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
+
+#     retry_instruction = state.get("retry_instruction", "")
+    
+#     all_blueprints = []
+
+#     # 2. BOUCLER sur chaque playlist
+#     for i, playlist in enumerate(playlists):
+#         print(f"--- Generating blueprint for playlist {i+1}/{len(playlists)}: {playlist.playlist_title} ---")
+        
+#         # Prépare un résumé des vidéos pour cette playlist uniquement
+#         playlist_videos_summary = ""
+#         for video in playlist.videos:
+#             playlist_videos_summary += f'- "{video.title}"\n'
+            
+#         # Logique de nouvelle tentative (inchangée)
+#         retry_instruction = state.get("retry_instruction", "")
+
+#         # 3. Appeler le LLM pour CETTE playlist
+#         prompt = Prompts.PLAN_SYLLABUS_WITH_PLACEHOLDERS.format(
+#             conversation_summary=conversation_summary,
+#             playlist_title=playlist.playlist_title,
+#             playlist_videos_summary=playlist_videos_summary,
+#             retry_instruction=retry_instruction
+#         )
+        
+#         try:
+#             response = await llm.ainvoke(prompt)
+#             single_blueprint = response.content
+            
+#             # Validation simple : on s'assure que le LLM n'a pas retourné une sortie vide
+#             if single_blueprint and "--- COURSE START ---" in single_blueprint:
+#                 all_blueprints.append(single_blueprint)
+#             else:
+#                 print(f"--- WARNING: LLM returned an empty or invalid blueprint for playlist: {playlist.playlist_title} ---")
+
+#         except Exception as e:
+#             print(f"--- ERROR generating blueprint for playlist {playlist.playlist_title}: {e} ---")
+#             continue # On passe à la playlist suivante en cas d'erreur
+
+#     # 4. Concaténer tous les blueprints générés
+#     final_blueprint_str = "\n\n".join(all_blueprints)
+    
+#     print(f"--- All blueprints generated. Total length: {len(final_blueprint_str)} chars. ---")
+#     return {"syllabus_blueprint_str": final_blueprint_str, "status": "syllabus_planned"}
+
 async def plan_syllabus(state: GraphState) -> dict:
-    """
-    Generates a syllabus blueprint by iterating through each playlist and
-    calling the LLM once per playlist for maximum reliability.
-    """
-    print("--- Planning Syllabus Structure (Iterative Approach) ---")
+    print("--- Planning Syllabus Structure (Parallel Approach) ---")
     
     merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
     if not merged_playlists_json_str or merged_playlists_json_str == "[]":
-        return {"syllabus_blueprint_str": ""} # Cas où il n'y a aucune ressource
+        return {"syllabus_blueprint_str": ""} 
 
-    # 1. Charger toutes les playlists
     playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
-    
-    all_blueprints = []
+    retry_instruction = state.get("retry_instruction", "")
 
-    # 2. BOUCLER sur chaque playlist
-    for i, playlist in enumerate(playlists):
-        print(f"--- Generating blueprint for playlist {i+1}/{len(playlists)}: {playlist.playlist_title} ---")
-        
-        # Prépare un résumé des vidéos pour cette playlist uniquement
+    # --- FONCTION INTERNE POUR UNE SEULE PLAYLIST ---
+    async def process_single_playlist(playlist):
+        print(f"--- Generating blueprint for: {playlist.playlist_title} ---")
         playlist_videos_summary = ""
-        for video in playlist.videos:
+        # On limite à 30 vidéos max pour ne pas exploser le contexte du LLM
+        for video in playlist.videos[:30]: 
             playlist_videos_summary += f'- "{video.title}"\n'
-            
-        # Logique de nouvelle tentative (inchangée)
-        retry_instruction = state.get("retry_instruction", "")
 
-        # 3. Appeler le LLM pour CETTE playlist
         prompt = Prompts.PLAN_SYLLABUS_WITH_PLACEHOLDERS.format(
             conversation_summary=conversation_summary,
             playlist_title=playlist.playlist_title,
@@ -280,23 +328,31 @@ async def plan_syllabus(state: GraphState) -> dict:
         )
         
         try:
+            # Appel LLM concurrent
             response = await llm.ainvoke(prompt)
-            single_blueprint = response.content
-            
-            # Validation simple : on s'assure que le LLM n'a pas retourné une sortie vide
-            if single_blueprint and "--- COURSE START ---" in single_blueprint:
-                all_blueprints.append(single_blueprint)
+            content = response.content
+            if content and "--- COURSE START ---" in content:
+                return content
             else:
-                print(f"--- WARNING: LLM returned an empty or invalid blueprint for playlist: {playlist.playlist_title} ---")
-
+                print(f"--- WARNING: Invalid blueprint for {playlist.playlist_title} ---")
+                return None
         except Exception as e:
-            print(f"--- ERROR generating blueprint for playlist {playlist.playlist_title}: {e} ---")
-            continue # On passe à la playlist suivante en cas d'erreur
+            print(f"--- ERROR generating blueprint for {playlist.playlist_title}: {e} ---")
+            return None
 
-    # 4. Concaténer tous les blueprints générés
-    final_blueprint_str = "\n\n".join(all_blueprints)
+    # --- LANCEMENT PARALLÈLE ---
+    # On lance toutes les tâches en même temps
+    tasks = [process_single_playlist(p) for p in playlists]
     
-    print(f"--- All blueprints generated. Total length: {len(final_blueprint_str)} chars. ---")
+    # On attend que tout finisse (gain de temps : temps max d'un appel au lieu de la somme)
+    results = await asyncio.gather(*tasks)
+    
+    # Filtrer les échecs (None)
+    valid_blueprints = [r for r in results if r is not None]
+    
+    final_blueprint_str = "\n\n".join(valid_blueprints)
+    print(f"--- All blueprints generated. Total: {len(valid_blueprints)} valid. ---")
+    
     return {"syllabus_blueprint_str": final_blueprint_str, "status": "syllabus_planned"}
 
 
