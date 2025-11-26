@@ -134,11 +134,23 @@ class ChatHistoryResponse(BaseModel):
     """Réponse standard pour les interactions qui mettent à jour le chat."""
     chatHistory: List[ChatMessage]
 
+# modèle pour l'objet 'stats' ---
+class QuizStats(BaseModel):
+    total: int
+    passed: int
+    missed: int
+    skipped: int
+
+
 class QuizzesForCourseResponse(BaseModel):
     """Modèle pour la liste des quiz d'un cours."""
-    attemptId: str
+    id: str
     title: str
-    passPercentage: float
+    stats: QuizStats
+
+class SkipRequest(BaseModel):
+    """Corps de la requête pour skipper une question."""
+    questionId: str
 
 # ==============================================================================
 # 4. ÉTAT INTERNE DU GRAPHE LANGGRAPH
@@ -196,3 +208,4 @@ class CourseAskResponse(BaseModel):
 #     answer: str
 #     contextTitle: Optional[str] = None
 #     createdAt: datetime
+

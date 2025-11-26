@@ -12,7 +12,8 @@ from psycopg.connection_async import AsyncConnection
 from .models import (
     StartQuizRequest, AnswerRequest, AskRequest,
     QuizAttemptResponse, ChatHistoryResponse, QuizzesForCourseResponse,
-    QuizQuestion, ChatMessage, QuizContent
+    QuizQuestion, ChatMessage, QuizContent,QuizStats,
+    SkipRequest
 )
 from src.cleeroute.langGraph.learners_api.course_gen.models import CompleteCourse
 # from .util_qa import extract_context_from_course
@@ -268,6 +269,39 @@ async def get_hint(
 
     return ChatHistoryResponse(chatHistory=chat_history_list)
 
+# ================================= skipping a question
+
+@quiz_router.post("/quiz-attempts/{attemptId}/skip", response_model=ChatHistoryResponse)
+async def skip_question(
+    attemptId: str,
+    request: SkipRequest,
+    graph: Pregel = Depends(get_quiz_graph)
+):
+    """
+    Permet à l'utilisateur de passer une question.
+    Cela compte comme une réponse "skipped" et déclenche le feedback de l'IA avec la solution.
+    """
+    config = {"configurable": {"thread_id": attemptId}}
+
+    update_payload = {
+        "current_interaction": {
+            "type": "skip",
+            "payload": {"questionId": request.questionId}
+        }
+    }
+
+    try:
+        final_values = await graph.ainvoke(update_payload, config)
+        chat_history_str = final_values.get("chat_history", "[]")
+        chat_history_list = PydanticSerializer.loads(chat_history_str, List[ChatMessage])
+        return ChatHistoryResponse(chatHistory=chat_history_list)
+        
+    except Exception as e:
+        print(f"--- ERROR in SKIP: {e} ---")
+        raise HTTPException(status_code=500, detail="Failed to skip question.")
+
+
+
 # ==============================================================================
 # ENDPOINT 4: Poser une Question de Suivi
 # ==============================================================================
@@ -416,7 +450,11 @@ async def get_quizzes_for_course(
     try:
         # 1. On exécute la requête pour obtenir un curseur
         cursor = await db.execute(
-            "SELECT attempt_id, title, pass_percentage FROM quiz_attempts WHERE course_thread_id = %s ORDER BY created_at DESC",
+            """
+                SELECT attempt_id, title, correct_count, incorrect_count, skipped_count  \
+                FROM quiz_attempts WHERE course_thread_id = %s 
+                ORDER BY created_at DESC
+            """,
             (threadId,)
         )
         # 2. On attend le résultat du fetchall (qui est aussi async en psycopg 3)
@@ -428,20 +466,32 @@ async def get_quizzes_for_course(
 
     response_list = []
     for rec in records:
-        # Si rec est un tuple (cas par défaut de psycopg), on accède par index
+        # Gestion Tuple (par défaut psycopg) vs Dict
         if isinstance(rec, tuple):
-             response_list.append(QuizzesForCourseResponse(
-                attemptId=rec[0],         # attempt_id
-                title=rec[1],             # title
-                passPercentage=rec[2] or 0.0 # pass_percentage
-            ))
-        # Si rec est un dict (si vous avez configuré row_factory)
+            a_id, title, pass_c, fail_c, skip_c = rec[0], rec[1], rec[2] or 0, rec[3] or 0, rec[4] or 0
         else:
-            response_list.append(QuizzesForCourseResponse(
-                attemptId=rec["attempt_id"],
-                title=rec["title"],
-                passPercentage=rec.get("pass_percentage") or 0.0
-            ))
+            a_id = rec["attempt_id"]
+            title = rec["title"]
+            pass_c = rec.get("correct_count", 0) or 0
+            fail_c = rec.get("incorrect_count", 0) or 0
+            skip_c = rec.get("skipped_count", 0) or 0
+        
+        # Calcul du total
+        total_q = pass_c + fail_c + skip_c
+        
+        # Si le total est 0 (quiz juste démarré), on peut renvoyer 0 ou essayer de deviner, 
+        # mais ici on se base sur l'historique enregistré.
+        
+        response_list.append(QuizzesForCourseResponse(
+            id=a_id,
+            title=title,
+            stats=QuizStats(
+                total=total_q,
+                passed=pass_c,
+                missed=fail_c,
+                skipped=skip_c
+            )
+        ))
 
     return response_list
 

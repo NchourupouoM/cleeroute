@@ -112,6 +112,17 @@ Write a short (1-2 sentences), encouraging, and insightful `recapText`.
 """
 )
 
+SKIP_FEEDBACK_PROMPT = PromptTemplate.from_template(
+"""You are a helpful AI Tutor. A student decided to skip a question.
+Question: "{question_text}"
+Correct Answer: "{correct_answer_text}"
+Explanation: "{explanation}"
+
+Your Task:
+Briefly give the correct answer and the explanation in a supportive way, encouraging them to try next time.
+"""
+)
+
 
 COURSE_QA_PROMPT = PromptTemplate.from_template(
 """You are an expert AI Tutor dedicated to this specific course. 

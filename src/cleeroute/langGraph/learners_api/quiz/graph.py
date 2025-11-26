@@ -95,6 +95,11 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
     
     user_answers = state.get("user_answers", {})
     target_question = next((q for q in questions if q.questionId == question_id), None)
+
+     # Initialisation des messages
+    user_message = None
+    ai_message = None
+
     if not target_question and interaction_type != 'ask':
         return state
     user_message_content = ""
@@ -104,6 +109,13 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
         is_correct = (user_answer_index == target_question.correctAnswerIndex)
         user_answers[question_id] = {"answerIndex": user_answer_index, "isCorrect": is_correct}
 
+        # Création message User
+        user_message = ChatMessage(
+            id=f"chat_{uuid.uuid4()}",
+            sender="user",
+            content=f"I choose option: {target_question.options[user_answer_index]}"
+        )
+
         prompt = EVALUATE_ANSWER_PROMPT.format(
             question_text=target_question.questionText,
             options_str=str(target_question.options),
@@ -111,32 +123,60 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
             explanation=target_question.explanation,
             student_answer_text=target_question.options[user_answer_index]
         )
-        user_message_content = f"Answered question '{target_question.questionText}' with: '{target_question.options[user_answer_index]}'"
 
-        try:
-            response = await llm.ainvoke(prompt)
-            ai_feedback = response.content
-        except Exception as e:
-            print(f"--- ERROR: Failed to get AI feedback: {e} ---")
-            return state
+        # user_message_content = f"Answered question '{target_question.questionText}' with: '{target_question.options[user_answer_index]}'"
+
+        response = await llm.ainvoke(prompt)
+        
+        ai_message = ChatMessage(
+            id=f"chat_{uuid.uuid4()}",
+            sender="ai",
+            content=response.content,
+            isCorrect=is_correct,
+            type="feedback"
+        )
+
+    # --- 2. TRAITEMENT SKIP ---
+    elif interaction_type == "skip":
+        # On marque comme répondu mais 'skipped' (isCorrect=False pour le calcul simple, ou un flag spécial)
+        # Pour simplifier le count, on le stocke avec un flag 'skipped': True
+        user_answers[question_id] = {"skipped": True, "isCorrect": False}
+
+        user_message = ChatMessage(
+            id=f"chat_{uuid.uuid4()}",
+            sender="user",
+            content="I want to skip this question."
+        )
+
+        prompt = SKIP_FEEDBACK_PROMPT.format(
+            question_text=target_question.questionText,
+            correct_answer_text=target_question.options[target_question.correctAnswerIndex],
+            explanation=target_question.explanation
+        )
+        response = await llm.ainvoke(prompt)
 
         ai_message = ChatMessage(
             id=f"chat_{uuid.uuid4()}",
             sender="ai",
-            content=ai_feedback,
-            isCorrect=is_correct
+            content=response.content,
+            type="skip_feedback"
         )
-        chat_history.append(ai_message)
-        # print(f"--- [DEBUG] chat_history length: {len(chat_history)} ---")
-        # print(f"--- [DEBUG] chat_history: {chat_history} ---")
 
+    # --- 3. TRAITEMENT HINT ---
     elif interaction_type == "hint":
+
+        user_message = ChatMessage(
+            id=f"chat_{uuid.uuid4()}", 
+            sender="user", 
+            content="Can I have a hint?"
+        )
+
         prompt = GENERATE_HINT_PROMPT.format(
             question_text=target_question.questionText,
             options_str=str(target_question.options),
             explanation=target_question.explanation
         )
-        user_message_content = f"Requested a hint."
+        # user_message_content = f"Requested a hint."
         
         response = await llm.ainvoke(prompt)
 
@@ -146,11 +186,14 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
             content=response.content,
             type="hint"
         )
-        chat_history.append(ai_message)
 
     elif interaction_type == "ask":
+
         user_query = payload["userQuery"]
         
+        user_message = ChatMessage(id=f"chat_{uuid.uuid4()}", sender="user", content=user_query)
+        
+
         # On formate l'historique pour le contexte
         history_text = "\n".join([f"{msg.sender}: {msg.content}" for msg in chat_history])
         
@@ -160,7 +203,7 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
             explanation=target_question.explanation if target_question else "N/A",
             user_query=user_query
         )
-        user_message_content = user_query
+        # user_message_content = user_query
         
         response = await llm.ainvoke(prompt)
 
@@ -170,14 +213,16 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
             content=response.content,
             type="answer"
         )
-        chat_history.append(ai_message)
+        # chat_history.append(ai_message)
 
-    user_message = ChatMessage(
-        id=f"chat_{uuid.uuid4()}",
-        sender="user",
-        content=user_message_content
-    )
-    chat_history.append(user_message)
+        response = await llm.ainvoke(prompt)
+        ai_message = ChatMessage(id=f"chat_{uuid.uuid4()}", sender="ai", content=response.content, type="answer")
+
+
+    if user_message:
+        chat_history.append(user_message)
+    if ai_message:
+        chat_history.append(ai_message)
 
     updated_state = {
         **state,
@@ -204,15 +249,30 @@ async def generate_summary_node(state: QuizGraphState) -> dict:
     
     user_answers = state["user_answers"]
     
-    correct_count = sum(1 for answer in user_answers.values() if answer["isCorrect"])
-    incorrect_count = len(user_answers) - correct_count
-    skipped_count = len(questions) - len(user_answers)
     total_count = len(questions)
+    
+    # Calcul précis
+    correct_count = 0
+    incorrect_count = 0
+    explicit_skipped_count = 0
+    
+    for ans in user_answers.values():
+        if ans.get("skipped"):
+            explicit_skipped_count += 1
+        elif ans.get("isCorrect"):
+            correct_count += 1
+        else:
+            incorrect_count += 1
+            
+    # Les questions non touchées du tout sont aussi des "skipped" implicites
+    implicit_skipped_count = total_count - len(user_answers)
+    total_skipped = explicit_skipped_count + implicit_skipped_count
 
+    # Mise à jour du prompt pour inclure le total si besoin
     prompt = GENERATE_SUMMARY_PROMPT.format(
         correct_count=correct_count,
         incorrect_count=incorrect_count,
-        skipped_count=skipped_count,
+        skipped_count=total_skipped,
         total_count=total_count
     )
     
@@ -223,10 +283,17 @@ async def generate_summary_node(state: QuizGraphState) -> dict:
         id=f"chat_{uuid.uuid4()}",
         sender="ai",
         type="recap",
-        stats={"pass": correct_count, "fail": incorrect_count, "skipped": skipped_count},
-        recapText=recap_text,
-        content=recap_text # Le contenu peut être le même que le recapText
+        # AJOUT DU TOTAL DANS LES STATS
+        stats={
+            "pass": correct_count, 
+            "fail": incorrect_count, 
+            "skipped": total_skipped, 
+            "total": total_count 
+        },
+        recapText=response.content,
+        content=response.content
     )
+    
     chat_history.append(summary_message)
     
     return {"chat_history": PydanticSerializer.dumps(chat_history)}
