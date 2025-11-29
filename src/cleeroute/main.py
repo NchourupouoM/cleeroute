@@ -19,6 +19,7 @@ from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import 
 from src.cleeroute.langGraph.learners_api.course_gen.routers import syllabus_router
 from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
 from src.cleeroute.langGraph.learners_api.quiz.routers import quiz_router
+from src.cleeroute.langGraph.learners_api.quiz.routers import global_chat_router
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
 
@@ -119,6 +120,7 @@ app.include_router(updated_router, prefix="", tags=["Updated the learner choose 
 # =============================================================================================
 app.include_router(quiz_router, prefix="", tags=["Quiz Generators for Learners"])
 # =============================================================================================
+app.include_router(global_chat_router, prefix="", tags=["Global Chat for Learners"])
     
 if __name__ == "__main__":
     import uvicorn

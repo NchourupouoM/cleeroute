@@ -1,6 +1,6 @@
 # Fichier: src/cleeroute/langGraph/learners_api/quiz/prompts.py
 
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 
 GENERATE_QUIZ_CONTENT_PROMPT = PromptTemplate.from_template(
 """You are an expert AI Quiz Generator. Your task is to create a complete quiz package, including a title and a set of high-quality, multiple-choice questions, based on a specific learning context.
@@ -143,4 +143,37 @@ A student has a question about the material.
 
 **Answer:**
 """
+)
+
+GLOBAL_CHAT_SYSTEM = """You are an expert AI Mentor for this course.
+Your goal is to help the student master the material based on the specific context they have chosen.
+
+**Student Profile (Recent Quiz Activity):**
+{student_quiz_context}
+
+**Current Learning Context (Scope: {scope}):**
+{context_text}
+
+**Instructions:**
+1. Use the course context to answer accurately.
+2. Use the conversation history to maintain continuity.
+3. Reference the student's quiz performance if relevant.
+4. If the scope is a video, assume the student is watching it right now.
+"""
+
+GLOBAL_CHAT_PROMPT = ChatPromptTemplate.from_messages([
+    SystemMessagePromptTemplate.from_template(GLOBAL_CHAT_SYSTEM),
+    MessagesPlaceholder(variable_name="history"),
+    HumanMessagePromptTemplate.from_template("{user_query}")
+])
+
+
+GENERATE_SESSION_TITLE_PROMPT = PromptTemplate.from_template(
+"""You are a helpful assistant.
+Generate a very short, concise, and relevant title (max 7-10 words) for a new chat session based on the user's first question.
+Do not use quotes. Do not be chatty. Just the title.
+
+User Question: "{user_query}"
+
+Title:"""
 )

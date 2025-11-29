@@ -61,7 +61,7 @@ class ChatMessage(BaseModel):
 class StartQuizRequest(BaseModel):
     """Corps de la requête pour POST /api/v1/quiz-attempts."""
     scope: Literal["course", "section", "subsection", "video"]
-    threadId: str # ID du cours
+    courseId: str # ID du cours
     sectionId: Optional[str] = None
     subsectionId: Optional[str] = None
     videoId: Optional[str] = None
@@ -78,7 +78,7 @@ class StartQuizRequest(BaseModel):
             "examples": [
                 {
                         "scope": "subsection",
-                        "threadId": "b83e5680-95ab-4df1-88f2-942570e43968",
+                        "courseId": "99fcc399-0c47-4dda-ba70-542ff30d94d7",
                         "sectionId": "section_uuid_67890",
                         "subsectionId": "subsection_uuid_abcde",
                         "content_for_quiz": "React Router is a standard library for routing in React. It enables the navigation among views of various components in a React Application, allows changing the browser URL, and keeps the UI in sync with the URL. This video provides a complete tutorial on React Router.",
@@ -201,11 +201,74 @@ class CourseAskResponse(BaseModel):
     contextUsed: str = Field(..., description="Résumé du contexte utilisé (ex: 'Section 2: Advanced React').")
 
 
-# class QAHistoryItem(BaseModel):
-#     id: str
-#     scope: str
-#     question: str
-#     answer: str
-#     contextTitle: Optional[str] = None
-#     createdAt: datetime
+# Models for global chat 
+class CreateSessionRequest(BaseModel):
+    """Payload pour créer une nouvelle conversation ciblée."""
+    title: Optional[str] = "New Conversation"
+    scope: Literal["course", "section", "subsection", "video"]
+    sectionIndex: Optional[int] = None
+    subsectionIndex: Optional[int] = None
+    videoId: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                # CAS 1 : Discussion sur tout le cours
+                {
+                    "title": "Aide générale sur Python",
+                    "scope": "course",
+                    "sectionIndex": None,
+                    "subsectionIndex": None,
+                    "videoId": None
+                },
+                # CAS 2 : Discussion sur une Section (Module 2)
+                {
+                    "title": "Questions sur les Structures de Données",
+                    "scope": "section",
+                    "sectionIndex": 1, # Index 1 = 2ème section
+                    "subsectionIndex": None,
+                    "videoId": None
+                },
+                # CAS 3 : Discussion sur une Sous-section précise
+                {
+                    "title": "Comprendre les List Comprehensions",
+                    "scope": "subsection",
+                    "sectionIndex": 1, 
+                    "subsectionIndex": 2, # Index 2 = 3ème sous-section de la section 1
+                    "videoId": None
+                },
+                # CAS 4 : Discussion sur une Vidéo spécifique
+                {
+                    "title": "Explication de la vidéo introductive",
+                    "scope": "video",
+                    "sectionIndex": None,
+                    "subsectionIndex": None,
+                    "videoId": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                }
+            ]
+        }
+
+class ChatSessionResponse(BaseModel):
+    sessionId: str
+    title: str
+    scope: str
+    updatedAt: datetime
+
+class MessageResponse(BaseModel):
+    sender: Literal["user", "ai"]
+    content: str
+    createdAt: datetime
+
+class ChatAskRequest(BaseModel):
+    """Payload pour poser une question dans une session existante."""
+    userQuery: str
+
+    class config:
+        json_schema_extra= {
+            "examples": [
+                {
+                     "userQuery": "Pourquoi le code plante si je mets le Hook dans une condition if ?"
+                }
+            ]
+        }
 

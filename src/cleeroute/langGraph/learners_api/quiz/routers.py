@@ -6,14 +6,16 @@ import asyncio
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends
 from langgraph.pregel import Pregel
+from langchain_core.messages import HumanMessage, AIMessage
 from psycopg.connection_async import AsyncConnection
+from datetime import datetime
 
 # 1. Importations des modèles et du graphe
 from .models import (
     StartQuizRequest, AnswerRequest, AskRequest,
     QuizAttemptResponse, ChatHistoryResponse, QuizzesForCourseResponse,
     QuizQuestion, ChatMessage, QuizContent,QuizStats,
-    SkipRequest
+    SkipRequest, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, MessageResponse
 )
 from src.cleeroute.langGraph.learners_api.course_gen.models import CompleteCourse
 # from .util_qa import extract_context_from_course
@@ -28,7 +30,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from .prompts import COURSE_QA_PROMPT
+from .prompts import GLOBAL_CHAT_PROMPT, GENERATE_SESSION_TITLE_PROMPT
+
+from .course_context_for_global_chat import get_student_quiz_context, extract_context_from_course, fetch_course_hierarchy
 
 qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -48,28 +52,28 @@ async def start_quiz_attempt(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        **Starts a new interactive quiz session.**
+        **Starts a new interactive quiz session.**\\
         
-        This endpoint orchestrates the creation of a personalized quiz based on the provided context (course, section, or video).
+        This endpoint orchestrates the creation of a personalized quiz based on the provided context (course, section, or video).\\
         
-        **Process:**
+        **Process:**\\
         1.  **AI Generation:** Invokes the LangGraph workflow to generate a unique title and a set of questions using Gemini, tailored to the learner's preferences (difficulty, count).
         2.  **Persistence:** Saves the new quiz attempt in the application database with a status of `started`.
         3.  **State Initialization:** Initializes a persistent LangGraph thread (`attemptId`) to manage the quiz state and chat history.
         
-        **Returns:**
+        **Returns:**\\
         - A unique `attemptId` (used for all subsequent interactions).
         - The full list of generated questions (without answers).
         - An empty initial chat history.
     """
     attempt_id = f"attempt_{uuid.uuid4()}"
     config = {"configurable": {"thread_id": attempt_id}}
-    course_thread_id = request.threadId
+    courseId = request.courseId
 
     # --- ÉTAPE 1: Préparer l'état initial pour le graphe ---
     # Le graphe a besoin de toutes ces informations pour générer le contenu.
     context_data = {
-        "scope": request.scope, "threadId": request.threadId, "sectionId": request.sectionId,
+        "scope": request.scope, "courseId": request.courseId, "sectionId": request.sectionId,
         "subsectionId": request.subsectionId, "videoId": request.videoId,
         "content_for_quiz": request.content_for_quiz
     }
@@ -96,15 +100,15 @@ async def start_quiz_attempt(
     quiz_title = final_values.get("title")
     if not quiz_title or "Failed" in quiz_title:
         # Mesure de sécurité si la génération du titre a échoué
-        quiz_title = f"Quiz on {context_data.get('scope')} '{context_data.get('sectionId', course_thread_id)}'"
+        quiz_title = f"Quiz on {context_data.get('scope')} '{context_data.get('sectionId', courseId)}'"
 
     try:
         await db.execute(
             """
-            INSERT INTO quiz_attempts (attempt_id, course_thread_id, title, status)
+            INSERT INTO quiz_attempts (attempt_id, course_id, title, status)
             VALUES (%s, %s, %s, 'started')
             """,
-            (attempt_id, course_thread_id, quiz_title)
+            (attempt_id, courseId, quiz_title)
         )
         print(f"--- [APP DB] Successfully logged new quiz attempt with title: '{quiz_title}' ---")
     except Exception as e:
@@ -143,16 +147,16 @@ async def submit_answer(
 ):
     
     """
-        **Submits a user's answer for evaluation.**
+        **Submits a user's answer for evaluation.** \\
         
-        This endpoint is part of the interactive loop. It sends the user's selected option to the AI tutor.
+        This endpoint is part of the interactive loop. It sends the user's selected option to the AI tutor.\\
         
-        **Process:**
+        **Process:**\\
         1.  **Evaluation:** The AI compares the user's answer with the correct option.
         2.  **Feedback Generation:** The AI generates personalized feedback (reinforcing concepts if correct, explaining mistakes if incorrect).
         3.  **State Update:** Updates the persistent chat history and records the user's performance for this question.
         
-        **Returns:**
+        **Returns:**\\
         - The updated `chatHistory` containing the user's action and the AI's immediate feedback.
     """
 
@@ -221,16 +225,16 @@ async def get_hint(
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
-        **Asks the AI Tutor for a hint regarding a specific question.**
+        **Asks the AI Tutor for a hint regarding a specific question.** \\
         
-        Use this when the learner is stuck. The AI provides a nudge in the right direction without revealing the full answer.
+        Use this when the learner is stuck. The AI provides a nudge in the right direction without revealing the full answer.\\
         
-        **Process:**
+        **Process:**\\
         1.  **Context Retrieval:** Retrieves the question context from the graph state.
         2.  **AI Generation:** Generates a helpful hint based on the question's explanation.
         3.  **State Update:** Appends the hint interaction to the persistent chat history.
         
-        **Returns:**
+        **Returns:**\\
         - The updated `chatHistory` including the newly generated hint.
     """
     config = {"configurable": {"thread_id": attemptId}}
@@ -278,8 +282,8 @@ async def skip_question(
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
-    Permet à l'utilisateur de passer une question.
-    Cela compte comme une réponse "skipped" et déclenche le feedback de l'IA avec la solution.
+    Allows the user to skip a question.
+    This counts as a "skipped" answer and triggers AI feedback with the solution.
     """
     config = {"configurable": {"thread_id": attemptId}}
 
@@ -315,16 +319,16 @@ async def ask_follow_up(
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
-        **Allows the learner to ask a free-text question to the AI Tutor.**
+        **Allows the learner to ask a free-text question to the AI Tutor.**\\
         
-        This turns the quiz into a conversational learning experience. The learner can ask for clarification on a specific question or a general concept related to the quiz.
+        This turns the quiz into a conversational learning experience. The learner can ask for clarification on a specific question or a general concept related to the quiz.\\
         
-        **Process:**
+        **Process:**\\
         1.  **Contextual Analysis:** The AI analyzes the user's query in the context of the current quiz and previous chat history.
         2.  **Response Generation:** Generates a detailed explanation or answer.
         3.  **State Update:** Appends the Q&A exchange to the chat history.
         
-        **Returns:**
+        **Returns:**\\
         - The updated `chatHistory` with the user's query and the AI's response.
     """
     config = {"configurable": {"thread_id": attemptId}}
@@ -360,17 +364,17 @@ async def get_summary(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        **Finalizes the quiz attempt and provides a performance recap.**
+        **Finalizes the quiz attempt and provides a performance recap.**\\
         
-        This endpoint should be called when the user finishes all questions or decides to stop the quiz.
+        This endpoint should be called when the user finishes all questions or decides to stop the quiz.\\
         
-        **Process:**
+        **Process:**\\
         1.  **Scoring:** Calculates the final score (pass/fail/skipped counts) based on the session state.
         2.  **AI Recap:** Generates a personalized encouraging message and summary based on performance.
         3.  **DB Update:** Updates the `quiz_attempts` table in the application database, marking the status as `completed` and saving the score.
         4.  **Chat Finalization:** Appends a special `recap` message to the chat history.
         
-        **Returns:**
+        **Returns:**\\
         - The final `chatHistory` containing the summary card data.
     """
     config = {"configurable": {"thread_id": attemptId}}
@@ -398,6 +402,14 @@ async def get_summary(
     try:
         if chat_history_list:
             summary_message = chat_history_list[-1]
+
+            # 1. Extraction du texte du résumé
+            recap_text = summary_message.content if summary_message.type == 'recap' else "No summary available."
+            
+            # 2. Sérialisation propre de l'historique pour la BDD (en liste de dicts)
+            # On utilise .model_dump() pour convertir les objets Pydantic en JSON pur
+            history_json = [msg.model_dump() for msg in chat_history_list]
+
             
             if summary_message.type == 'recap' and summary_message.stats:
                 stats = summary_message.stats
@@ -412,10 +424,12 @@ async def get_summary(
                         correct_count = %s,
                         incorrect_count = %s,
                         skipped_count = %s,
-                        completed_at = CURRENT_TIMESTAMP
+                        completed_at = CURRENT_TIMESTAMP,
+                        summary_text = %s, 
+                        interaction_json = %s
                     WHERE attempt_id = %s
                     """,
-                    (pass_percentage, stats.get('pass'), stats.get('fail'), stats.get('skipped'), attemptId)
+                    (pass_percentage, stats.get('pass'), stats.get('fail'), stats.get('skipped'),recap_text,json.dumps(history_json), attemptId)
                 )
                 print(f"--- [APP DB] Successfully updated quiz attempt '{attemptId}' with final score. ---")
 
@@ -424,27 +438,28 @@ async def get_summary(
     
     return ChatHistoryResponse(chatHistory=chat_history_list)
 
+
 # ==============================================================================
 # ENDPOINT 6: Obtenir la Liste des Quiz pour un Cours
 # ==============================================================================
-@quiz_router.get("/courses/{threadId}/quizzes", response_model=List[QuizzesForCourseResponse], summary="Get Quiz History for a Course",responses={
+@quiz_router.get("/courses/{courseId}/quizzes", response_model=List[QuizzesForCourseResponse], summary="Get Quiz History for a Course",responses={
         200: {"description": "List of quizzes retrieved successfully."},
         500: {"description": "Database error."}
     })
 async def get_quizzes_for_course(
-    threadId: str,
+    courseId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        **Retrieves the history of all quiz attempts associated with a specific course.**
+        **Retrieves the history of all quiz attempts associated with a specific course.**\\
         
-        This is a read-only endpoint used to display a list of past quizzes to the user (e.g., on a dashboard or course sidebar).
+        This is a read-only endpoint used to display a list of past quizzes to the user (e.g., on a dashboard or course sidebar).\\
         
-        **Process:**
-        - Queries the application database (`quiz_attempts` table) filtering by the Course's `threadId`.
-        - Orders results by creation date (newest first).
+        **Process:**\\
+        - Queries the application database (`quiz_attempts` table) filtering by the Course's `courseId`.\\
+        - Orders results by creation date (newest first).\\
         
-        **Returns:**
+        **Returns:**\\
         - A list of quiz summaries (Attempt ID, Title, Pass Percentage).
     """
     try:
@@ -452,16 +467,16 @@ async def get_quizzes_for_course(
         cursor = await db.execute(
             """
                 SELECT attempt_id, title, correct_count, incorrect_count, skipped_count  \
-                FROM quiz_attempts WHERE course_thread_id = %s 
+                FROM quiz_attempts WHERE course_id = %s 
                 ORDER BY created_at DESC
             """,
-            (threadId,)
+            (courseId,)
         )
         # 2. On attend le résultat du fetchall (qui est aussi async en psycopg 3)
         records = await cursor.fetchall()
 
     except Exception as e:
-        print(f"--- [APP DB] FATAL ERROR: Could not fetch quizzes for course '{threadId}': {e} ---")
+        print(f"--- [APP DB] FATAL ERROR: Could not fetch quizzes for course '{courseId}': {e} ---")
         raise HTTPException(status_code=500, detail="Failed to fetch quiz history.")
 
     response_list = []
@@ -496,145 +511,248 @@ async def get_quizzes_for_course(
     return response_list
 
 
-# @quiz_router.post("/courses/{threadId}/ask-free", response_model=CourseAskResponse)
-# async def ask_course_free_question(
-#     threadId: str,
-#     request: CourseAskRequest,
-#     db: AsyncConnection = Depends(get_app_db_connection)
-# ):
-#     """
-#     Permet de poser une question libre sur le contenu d'un cours généré.
-#     """
+global_chat_router = APIRouter()
+
+# 1. CRÉER UNE SESSION (Avec Scope défini par l'utilisateur)
+@global_chat_router.post("/courses/{courseId}/sessions", response_model=ChatSessionResponse)
+async def create_chat_session(
+    courseId: str,
+    request: CreateSessionRequest,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+        Creates a new persistent chat session for a specific course.\\
+
+        The user can define the 'scope' of the conversation (Entire Course, Specific Section, 
+        Subsection, or Video). The session starts with a default title (e.g., "New Chat") 
+        which is auto-updated after the first interaction.\\
+
+        Args:\\
+            courseId (str): The unique UUID of the generated course.\\
+            request (CreateSessionRequest): Includes the `scope`, optional indexes (section/subsection), 
+                                            and an optional initial title.\\
+                                                \\
+        Returns:\\
+            ChatSessionResponse: The metadata of the newly created session (ID, title, scope).
+    """
+
+    session_id = str(uuid.uuid4())
+    try:
+        await db.execute(
+            """
+            INSERT INTO chat_sessions 
+            (session_id, course_id, title, scope, section_index, subsection_index, video_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                session_id, courseId, request.title, request.scope, 
+                request.sectionIndex, request.subsectionIndex, request.videoId
+            )
+        )
+    except Exception as e:
+        print(f"DB Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create session")
+
+    return ChatSessionResponse(
+        sessionId=session_id, 
+        title=request.title, 
+        scope=request.scope,
+        updatedAt=datetime.now()
+    )
+
+# recuperer les sessions
+@global_chat_router.get("/courses/{courseId}/sessions", response_model=List[ChatSessionResponse])
+async def get_chat_sessions(
+    courseId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+        Retrieves all chat sessions associated with a specific course.\\
+
+        This allows the frontend to display a "History" sidebar of previous conversations, 
+        ordered by the last update time.\\
+
+        Args:\\
+            courseId (str): The unique UUID of the course.\\
+
+        Returns:\\
+            List[ChatSessionResponse]: A list of sessions with their titles and scopes.
+    """
+    cursor = await db.execute(
+        "SELECT session_id, title, scope, updated_at FROM chat_sessions WHERE course_id = %s ORDER BY updated_at DESC",
+        (courseId,)
+    )
+    records = await cursor.fetchall()
     
-#     # 1. Récupérer le JSON complet du cours depuis la BDD
-#     # On suppose que vous stockez le 'CompleteCourse' sérialisé dans une table 'generated_courses' ou similaire
-#     try:
-#         # Exemple de requête : adaptez le nom de la table et de la colonne
-#         cursor = await db.execute(
-#             "SELECT course_data FROM generated_courses WHERE thread_id = %s",
-#             (threadId,)
-#         )
-#         result = await cursor.fetchone()
+    sessions = []
+    for r in records:
+        # Gestion tuple/dict
+        val = r if isinstance(r, tuple) else (r['session_id'], r['title'], r['scope'], r['updated_at'])
+        sessions.append(ChatSessionResponse(sessionId=str(val[0]), title=val[1], scope=val[2], updatedAt=val[3]))
         
-#         if not result:
-#             raise HTTPException(status_code=404, detail="Course not found")
-            
-#         # Si 'course_data' est stocké en JSONB (dict) ou Text (str)
-#         course_data_raw = result[0] # ou result["course_data"] selon row_factory
-        
-#         # Désérialisation en objet Pydantic
-#         if isinstance(course_data_raw, str):
-#              course_obj = PydanticSerializer.loads(course_data_raw, CompleteCourse)
-#         else:
-#              # Si c'est déjà un dict (JSONB via psycopg)
-#              course_obj = CompleteCourse(**course_data_raw)
-             
-#     except Exception as e:
-#         print(f"--- [DB ERROR] Failed to fetch course data: {e} ---")
-#         raise HTTPException(status_code=500, detail="Internal server error fetching course content")
+    return sessions
 
-#     # 2. Construire le contexte textuel
-#     try:
-#         context_text, context_title = extract_context_from_course(
-#             course=course_obj,
-#             scope=request.scope,
-#             section_idx=request.sectionIndex,
-#             subsection_idx=request.subsectionIndex
-#         )
-#     except Exception as e:
-#          raise HTTPException(status_code=400, detail=f"Error extracting context: {str(e)}")
+# Lister les messages d'une session
+@global_chat_router.get("/sessions/{sessionId}/messages", response_model=List[MessageResponse])
+async def get_session_messages(
+    sessionId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+        Loads the full message history for a specific chat session.\\
 
-#     # 3. Appeler le LLM
-#     formatted_prompt = COURSE_QA_PROMPT.format(
-#         context_text=context_text,
-#         user_query=request.userQuery
-#     )
+        Used to repopulate the chat window when the user clicks on an existing conversation.\\
+
+        Args:\\
+            sessionId (str): The unique UUID of the chat session.\\
+
+        Returns:\\
+            List[MessageResponse]: A chronological list of messages exchanged between 'user' and 'ai'.
+    """
+    cursor = await db.execute(
+        "SELECT sender, content, created_at FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
+        (sessionId,)
+    )
+    records = await cursor.fetchall()
     
-#     try:
-#         response = await qa_llm.ainvoke(formatted_prompt)
-#         answer_text = response.content
-#     except Exception as e:
-#         print(f"--- [LLM ERROR] Failed to generate answer: {e} ---")
-#         raise HTTPException(status_code=500, detail="Failed to generate answer from AI")
-
-#     # 4. Sauvegarde dans la BDD ---
-#     try:
-#         await db.execute(
-#             """
-#             INSERT INTO course_qa_history 
-#             (course_thread_id, scope, section_index, subsection_index, question, answer, context_title)
-#             VALUES (%s, %s, %s, %s, %s, %s, %s)
-#             """,
-#             (
-#                 threadId, 
-#                 request.scope, 
-#                 request.sectionIndex, 
-#                 request.subsectionIndex, 
-#                 request.userQuery, 
-#                 answer_text, 
-#                 context_title
-#             )
-#         )
-#         # Pas besoin de commit explicite si votre configuration DB est en autocommit,
-#         # sinon ajoutez await db.commit() ici selon votre config psycopg.
-#         print(f"--- [DB] Saved Q&A to history for course {threadId} ---")
+    msgs = []
+    for r in records:
+        val = r if isinstance(r, tuple) else (r['sender'], r['content'], r['created_at'])
+        msgs.append(MessageResponse(sender=val[0], content=val[1], createdAt=val[2]))
         
-#     except Exception as e:
-#         # On log l'erreur mais on ne bloque pas la réponse à l'utilisateur
-#         print(f"--- [DB ERROR] Failed to save history: {e} ---")
-
-#     return CourseAskResponse(
-#         answer=answer_text,
-#         contextUsed=context_title
-#     )
+    return msgs
 
 
-# @quiz_router.get("/courses/{threadId}/qa-history", response_model=List[QAHistoryItem])
-# async def get_course_qa_history(
-#     threadId: str,
-#     db: AsyncConnection = Depends(get_app_db_connection)
-# ):
-#     """
-#     Récupère tout l'historique des questions/réponses libres pour un cours donné.
-#     """
-#     try:
-#         cursor = await db.execute(
-#             """
-#             SELECT id, scope, question, answer, context_title, created_at 
-#             FROM course_qa_history 
-#             WHERE course_thread_id = %s 
-#             ORDER BY created_at DESC
-#             """,
-#             (threadId,)
-#         )
+# 4. POSER UNE QUESTION (Le Cœur du Système)
+@global_chat_router.post("/sessions/{sessionId}/ask", response_model=MessageResponse)
+async def ask_in_session(
+    sessionId: str,
+    request: ChatAskRequest,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+        Sends a user message to the AI Assistant and receives a response.\\
+            \\
+        This is the core logic of the Global Chat. It performs the following steps:
+        1. **Context Retrieval:** Reconstructs the relevant course material (RAG) based on the session scope.
+        2. **Student Profiling:** Fetches the student's recent quiz performance and struggles.
+        3. **Memory Retrieval:** Loads previous messages from this session.
+        4. **Generation:** Generates an answer using the LLM.
+        5. **Auto-Titling:** If this is the first message, generates a relevant title for the session.
+        6. **Persistence:** Saves the new user/AI message pair to the database.
+
+        Args: \\
+            sessionId (str): The unique UUID of the chat session.\\
+            request (ChatAskRequest): The user's text query.
+
+        Returns:\\
+            MessageResponse: The AI's response and the creation timestamp.
+    """
+    # A. Récupérer les infos de la session (Scope & course_id)
+    cursor = await db.execute(
+        "SELECT course_id, scope, section_index, subsection_index, video_id FROM chat_sessions WHERE session_id = %s",
+        (sessionId,)
+    )
+
+    # Récupérer l'historique des messages ( pour la mise a jour du titre de la session)
+    msgs_cursor = await db.execute(
+        "SELECT sender, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
+        (sessionId,)
+    )
+    history_rows = await msgs_cursor.fetchall()
+     # --- DETECTION DU PREMIER MESSAGE ---
+    # Si history_rows est vide, c'est que c'est la toute première interaction
+    is_first_interaction = (len(history_rows) == 0)
+    # Invocation du LLM pour la RÉPONSE 
+
+    session_rec = await cursor.fetchone()
+    if not session_rec:
+        raise HTTPException(status_code=404, detail="Session not found")
         
-#         records = await cursor.fetchall()
-        
-#         history = []
-#         for rec in records:
-#             # Gestion tuple vs dict (pour être robuste comme vu précédemment)
-#             if isinstance(rec, tuple):
-#                 history.append(QAHistoryItem(
-#                     id=str(rec[0]),
-#                     scope=rec[1],
-#                     question=rec[2],
-#                     answer=rec[3],
-#                     contextTitle=rec[4],
-#                     createdAt=rec[5]
-#                 ))
-#             else:
-#                 # Si row_factory est configuré
-#                 history.append(QAHistoryItem(
-#                     id=str(rec["id"]),
-#                     scope=rec["scope"],
-#                     question=rec["question"],
-#                     answer=rec["answer"],
-#                     contextTitle=rec["context_title"],
-#                     createdAt=rec["created_at"]
-#                 ))
+    # Mapping des données session
+    if isinstance(session_rec, tuple):
+        course_id, scope, sec_idx, sub_idx, vid_id = session_rec
+    else:
+        course_id = session_rec["course_id"]
+        scope = session_rec["scope"]
+        sec_idx = session_rec["section_index"]
+        sub_idx = session_rec["subsection_index"]
+        vid_id = session_rec["video_id"]
+
+    # B. Récupérer le contenu du cours (JSON complet)
+    # Au lieu de SELECT course_data, on reconstruit l'objet
+    try:
+        course_obj = await fetch_course_hierarchy(db, str(course_id))
+    except Exception as e:
+        print(f"Error fetching course hierarchy: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve course structure")
+
+    # C. Le reste du code reste identique
+    context_text = extract_context_from_course(course_obj, scope, sec_idx, sub_idx, vid_id)
+    student_quiz_context = await get_student_quiz_context(db, str(course_id))
+
+    # D. Récupérer l'historique des messages pour LangChain
+    msgs_cursor = await db.execute(
+        "SELECT sender, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
+        (sessionId,)
+    )
+    history_rows = await msgs_cursor.fetchall()
+    
+    langchain_history = []
+    for row in history_rows:
+        sender, content = (row[0], row[1]) if isinstance(row, tuple) else (row['sender'], row['content'])
+        if sender == 'user':
+            langchain_history.append(HumanMessage(content=content))
+        else:
+            langchain_history.append(AIMessage(content=content))
+
+    # E. Invocation du LLM
+    chain = GLOBAL_CHAT_PROMPT | qa_llm
+    
+    try:
+        ai_response = await chain.ainvoke({
+            "student_quiz_context": student_quiz_context,
+            "scope": scope,
+            "context_text": context_text,
+            "history": langchain_history,
+            "user_query": request.userQuery
+        })
+        answer_text = ai_response.content
+    except Exception as e:
+        print(f"LLM Error: {e}")
+        raise HTTPException(status_code=500, detail="AI generation failed")
+
+    # F. Sauvegarde des messages et mise à jour de la session
+    try:
+        await db.execute(
+            """
+            INSERT INTO chat_messages (session_id, sender, content) 
+            VALUES (%s, 'user', %s), (%s, 'ai', %s)
+            """,
+            (sessionId, request.userQuery, sessionId, answer_text)
+        )
+
+        if is_first_interaction:
+            print(f"--- First interaction detected for session {sessionId}. Generating title... ---")
+            try:
+                # Appel LLM léger pour le titre
+                title_chain = GENERATE_SESSION_TITLE_PROMPT | qa_llm
+                title_response = await title_chain.ainvoke({"user_query": request.userQuery})
+                new_title = title_response.content.strip().replace('"', '') # Nettoyage basique
                 
-#         return history
+                # Mise à jour du titre en BDD
+                await db.execute(
+                    "UPDATE chat_sessions SET title = %s, updated_at = CURRENT_TIMESTAMP WHERE session_id = %s",
+                    (new_title, sessionId)
+                )
+            except Exception as e:
+                print(f"--- WARNING: Failed to auto-generate title: {e} ---")
+                # En cas d'erreur de titre, on met juste à jour la date
+                await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
+        else:
+            # Ce n'est pas le premier message, on met juste à jour la date
+            await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
+    except Exception as e:
+        print(f"DB Save Error: {e}")
 
-#     except Exception as e:
-#         print(f"--- [DB ERROR] Failed to fetch Q&A history: {e} ---")
-#         raise HTTPException(status_code=500, detail="Failed to load history")
+    return MessageResponse(sender="ai", content=answer_text, createdAt=datetime.now())
