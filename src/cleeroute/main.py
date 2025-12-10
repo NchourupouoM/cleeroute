@@ -17,9 +17,12 @@ from src.cleeroute.langGraph.streaming_course_structure.main_course import cours
 from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import course_outline_router, course_subsections_router
 # from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
 from src.cleeroute.langGraph.learners_api.course_gen.routers import syllabus_router
+from src.cleeroute.langGraph.learners_api.course_gen.router_with_streaming import stream_syllabus_router
 from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
 from src.cleeroute.langGraph.learners_api.quiz.routers import quiz_router
 from src.cleeroute.langGraph.learners_api.quiz.routers import global_chat_router
+from src.cleeroute.langGraph.learners_api.quiz.router_with_streaming import stream_global_chat_router
+from src.cleeroute.langGraph.learners_api.quiz.router_with_streaming import stream_quiz_router
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
 
@@ -116,11 +119,18 @@ app.include_router(project_content_router_stream, prefix="", tags=["Project cont
 # ============================================================================================
 app.include_router(syllabus_router, prefix="", tags=["Syllabus Generators for Learners using youtube playlists"])
 # =============================================================================================
+app.include_router(stream_syllabus_router, prefix="", tags=["Streaming Syllabus Generators for Learners using youtube playlists"])
+# =============================================================================================
 app.include_router(updated_router, prefix="", tags=["Updated the learner choose path in the course structure"])
 # =============================================================================================
 app.include_router(quiz_router, prefix="", tags=["Quiz Generators for Learners"])
 # =============================================================================================
+app.include_router(stream_quiz_router, prefix="", tags=["Streaming Quiz Generators for Learners"])
+# =============================================================================================
 app.include_router(global_chat_router, prefix="", tags=["Global Chat for Learners"])
+# =============================================================================================
+app.include_router(stream_global_chat_router, prefix="", tags=["Streaming Global Chat for Learners"])
+# =============================================================================================
     
 if __name__ == "__main__":
     import uvicorn

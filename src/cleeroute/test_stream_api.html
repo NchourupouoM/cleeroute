@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cleeroute API Test Console v2</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --text-light: #f8fafc;
+            --text-gray: #94a3b8;
+            --success: #10b981;
+            --error: #ef4444;
+            --ai-msg: #334155;
+            --user-msg: #2563eb;
+            --warning: #f59e0b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* SIDEBAR CONFIG */
+        .sidebar {
+            background-color: var(--bg-panel);
+            padding: 20px;
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        h2 { font-size: 1.2rem; color: var(--text-gray); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;}
+        label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: var(--text-gray); }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: white;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .btn-primary { background-color: var(--primary); color: white; }
+        .btn-primary:hover { background-color: #1d4ed8; }
+        .btn-secondary { background-color: #475569; color: white; }
+        .btn-danger { background-color: var(--error); color: white; }
+        .btn-success { background-color: var(--success); color: white; }
+        .btn-warning { background-color: var(--warning); color: black; }
+
+        /* MAIN CONTENT */
+        .main-area {
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .tabs {
+            display: flex;
+            background: var(--bg-panel);
+            border-bottom: 1px solid #334155;
+        }
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            color: var(--text-gray);
+            font-weight: 600;
+        }
+        .tab.active {
+            color: var(--text-light);
+            border-bottom: 3px solid var(--primary);
+            background: rgba(37, 99, 235, 0.1);
+        }
+
+        .view-panel {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            padding: 20px;
+            height: 100%;
+            overflow: hidden;
+        }
+        .view-panel.active { display: flex; }
+
+        /* CHAT UI */
+        .chat-window {
+            flex: 1;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            min-height: 0;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 10px;
+            line-height: 1.5;
+            font-size: 0.95rem;
+            animation: fadeIn 0.3s ease;
+            white-space: pre-wrap;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .msg-user { align-self: flex-end; background-color: var(--user-msg); border-bottom-right-radius: 2px; }
+        .msg-ai { align-self: flex-start; background-color: var(--ai-msg); border-bottom-left-radius: 2px; }
+        .msg-system { align-self: center; background: transparent; color: var(--text-gray); font-size: 0.8rem; border: 1px dashed #334155; }
+
+        .input-area { display: flex; gap: 10px; }
+
+        /* QUIZ UI */
+        .quiz-card {
+            background: var(--bg-panel);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .option-btn {
+            text-align: left;
+            margin-bottom: 8px;
+            background: #334155;
+            color: var(--text-light);
+        }
+        .option-btn:hover { background: #475569; }
+        .quiz-controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+
+        /* PROGRESS BAR */
+        .progress-container {
+            margin-top: 20px;
+            background: #334155;
+            border-radius: 10px;
+            height: 20px;
+            width: 100%;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            background: var(--success);
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+        .progress-text {
+            text-align: center;
+            font-size: 0.9rem;
+            margin-top: 5px;
+            color: var(--text-gray);
+        }
+
+        /* DEBUG LOGS */
+        .debug-panel {
+            background: #000;
+            border-left: 1px solid #334155;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.8rem;
+            color: #10b981;
+        }
+        .log-entry { margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; word-break: break-all; }
+        .log-time { color: #64748b; font-size: 0.7rem; }
+        .badge { display: inline-block; padding: 2px 5px; border-radius: 4px; font-size: 0.7rem; margin-right: 5px; }
+        .badge-req { background: #2563eb; color: white; }
+        .badge-res { background: #10b981; color: black; }
+        .badge-stream { background: #f59e0b; color: black; }
+        .badge-poll { background: #8b5cf6; color: white; }
+
+        pre { background: #0f172a; padding: 10px; border-radius: 6px; overflow-x: auto; color: #e2e8f0; }
+
+    </style>
+</head>
+<body>
+
+    <!-- 1. SIDEBAR: CONFIGURATION -->
+    <div class="sidebar">
+        <h2>Configuration</h2>
+        <div>
+            <label>API Base URL</label>
+            <input type="text" id="baseUrl" value="http://localhost:8000">
+        </div>
+        <div>
+            <label>Course UUID (for Quiz/Chat)</label>
+            <input type="text" id="courseId" placeholder="For Global Chat & Quiz">
+        </div>
+
+        <hr style="border-color: #334155;">
+
+        <div id="genInfoBox">
+            <h2>Gen Process</h2>
+            <div style="font-size:0.9rem; color:#94a3b8;">
+                Thread ID: <span id="displayGenThreadId" style="color:white; font-family:monospace;">-</span>
+            </div>
+        </div>
+        
+        <hr style="border-color: #334155;">
+
+        <div id="quizInfoBox" style="display:none;">
+            <h2>Current Quiz</h2>
+            <div style="font-size:0.9rem; color:#94a3b8;">
+                Attempt ID: <span id="displayAttemptId" style="color:white;">-</span>
+            </div>
+        </div>
+
+        <div id="sessionInfoBox" style="display:none;">
+            <h2>Current Session</h2>
+            <div style="font-size:0.9rem; color:#94a3b8;">
+                Session ID: <span id="displaySessionId" style="color:white;">-</span>
+            </div>
+            <button class="btn-secondary" onclick="refreshMessages()" style="margin-top:10px;">Refresh Messages</button>
+        </div>
+    </div>
+
+    <!-- 2. MAIN AREA -->
+    <div class="main-area">
+        <!-- TABS -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('gen')">🚀 Course Generation</div>
+            <div class="tab" onclick="switchTab('quiz')">📝 Quiz Mode</div>
+            <div class="tab" onclick="switchTab('global')">🤖 Global Chat</div>
+        </div>
+
+        <div id="gen-config" style="background: var(--bg-panel); padding:15px; border-radius:8px; margin-bottom:15px;">
+                <h3>Start Learning Journey</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+                    <div>
+                        <label>User Goal (Text)</label>
+                        <input type="text" id="genInputText" placeholder="I want to learn..." value="I want to learn advanced Python patterns">
+                    </div>
+                    <div>
+                        <label>YouTube Link (Optional)</label>
+                        <input type="text" id="genInputLink" placeholder="https://youtube.com/...">
+                    </div>
+                </div>
+                
+                <!-- Feedback visuel pour les étapes de méta-données -->
+                <div id="metaStatus" style="margin-top:10px; font-size:0.85rem; color:var(--text-gray); display:none;">
+                    <div id="step1">⬜ Generating Summary...</div>
+                    <div id="step2">⬜ Generating Details...</div>
+                    <div id="step3">⬜ Starting Stream...</div>
+                </div>
+
+                <button id="btnStartJourney" class="btn-primary" style="margin-top:10px;" onclick="startJourneyChain()">
+                    Analyze & Start Conversation
+                </button>
+            </div>
+
+            <!-- Step 2: Conversation -->
+            <div class="chat-window" id="gen-chat">
+                <div class="message msg-system">Waiting to start journey...</div>
+            </div>
+
+            <div class="input-area" id="gen-input-area" style="margin-bottom: 20px;">
+                <input type="text" id="genReplyInput" placeholder="Answer the AI's question...">
+                <button class="btn-primary" style="width: 100px;" onclick="replyJourney()">Reply</button>
+            </div>
+
+            <!-- Step 3: Trigger Generation & Status -->
+            <div style="border-top: 1px solid #334155; padding-top: 20px;">
+                <div style="display:flex; justify-content: space-between; align-items: center;">
+                    <h3>Course Generation Status</h3>
+                    <button id="btnTriggerGen" class="btn-warning" style="width:auto;" onclick="triggerGeneration()" disabled>Generate Syllabus (After Chat)</button>
+                </div>
+                
+                <div class="progress-container">
+                    <div id="genProgressBar" class="progress-bar"></div>
+                </div>
+                <div id="genStatusText" class="progress-text">Waiting to start...</div>
+
+                <!-- Final Result -->
+                <div id="genResultArea" style="margin-top: 20px; display: none;">
+                    <h4>Final Syllabus JSON:</h4>
+                    <pre id="genResultJson"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB CONTENT: QUIZ -->
+        <div id="quiz-panel" class="view-panel">
+            <!-- Start Screen -->
+            <div id="quiz-start-screen">
+                <h3>Start New Quiz</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:10px;">
+                    <div>
+                        <label>Scope</label>
+                        <select id="quizScope">
+                            <option value="section">Section</option>
+                            <option value="subsection">Subsection</option>
+                            <option value="video">Video</option>
+                            <option value="course">Course</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Content Context (Mock)</label>
+                        <textarea id="quizContent" rows="3">React hooks allow you to use state and other React features without writing a class.</textarea>
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="startQuiz()">Generate Quiz</button>
+            </div>
+
+            <!-- Active Quiz UI -->
+            <div id="quiz-active-screen" style="display:none;">
+                <div class="quiz-card">
+                    <h3 id="q-title" style="margin-bottom:10px; color: var(--primary);">Question 1</h3>
+                    <p id="q-text" style="font-size:1.1rem; margin-bottom:15px;">Loading question...</p>
+                    <div id="q-options"></div>
+                </div>
+
+                <div class="chat-window" id="quiz-chat" style="height: 300px;">
+                    <div class="message msg-system">Quiz started. AI Tutor is ready.</div>
+                </div>
+
+                <div class="quiz-controls">
+                    <button class="btn-secondary" onclick="getQuizHint()">💡 Get Hint</button>
+                    <button class="btn-danger" onclick="skipQuestion()">⏩ Skip Question</button>
+                    <button class="btn-success" onclick="finishQuiz()">🏆 Finish & Summary</button>
+                </div>
+                
+                <div class="input-area" style="margin-top:10px;">
+                    <input type="text" id="quizAskInput" placeholder="Ask a follow-up question...">
+                    <button class="btn-primary" style="width: auto;" onclick="askQuizBot()">Ask</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB CONTENT: GLOBAL CHAT -->
+        <div id="global-panel" class="view-panel">
+            <div style="background: var(--bg-panel); padding:15px; border-radius:8px; margin-bottom:20px;">
+                <h3>Create New Session</h3>
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <select id="globalScope" style="width:150px;">
+                        <option value="course">Course</option>
+                        <option value="section">Section</option>
+                        <option value="video">Video</option>
+                    </select>
+                    <input type="text" id="globalTitle" placeholder="Title (Optional)">
+                    <button class="btn-primary" style="width:auto;" onclick="createSession()">Create Session</button>
+                    <button class="btn-secondary" style="width:auto;" onclick="loadSessions()">Load List</button>
+                </div>
+                <div id="sessionList" style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;"></div>
+            </div>
+
+            <div class="chat-window" id="global-chat">
+                <div class="message msg-system">Select or create a session to start chatting.</div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="globalAskInput" placeholder="Ask your AI Tutor...">
+                <button class="btn-primary" style="width: 100px;" onclick="askGlobalBot()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. DEBUG PANEL -->
+    <div class="debug-panel" id="debugLogs">
+        <div style="color:white; border-bottom:1px solid #333; padding-bottom:5px; margin-bottom:10px;">JSON LOGS</div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- STATE MANAGEMENT ---
+        const state = {
+            baseUrl: 'http://localhost:8000',
+            // Course Gen State
+            genThreadId: null,
+            pollingInterval: null,
+            
+            // Quiz State
+            courseId: '',
+            attemptId: '',
+            currentQuestions: [],
+            currentQuestionId: null,
+            
+            // Global Chat State
+            sessionId: '',
+        };
+
+        // --- UTILS ---
+        const $ = id => document.getElementById(id);
+        const log = (type, data) => {
+            const panel = $('debugLogs');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            const time = new Date().toLocaleTimeString();
+            
+            let badgeClass = 'badge-req';
+            if(type === 'RESPONSE') badgeClass = 'badge-res';
+            if(type === 'STREAM') badgeClass = 'badge-stream';
+            if(type === 'POLL') badgeClass = 'badge-poll';
+
+            entry.innerHTML = `
+                <div class="log-time">${time}</div>
+                <span class="badge ${badgeClass}">${type}</span>
+                ${typeof data === 'object' ? JSON.stringify(data, null, 2) : data}
+            `;
+            panel.prepend(entry);
+        };
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+            
+            $('genInfoBox').style.display = 'none';
+            $('quizInfoBox').style.display = 'none';
+            $('sessionInfoBox').style.display = 'none';
+
+            if(tabName === 'gen') {
+                $('gen-panel').classList.add('active');
+                document.querySelector('.tab:nth-child(1)').classList.add('active');
+                $('genInfoBox').style.display = 'block';
+            } else if(tabName === 'quiz') {
+                $('quiz-panel').classList.add('active');
+                document.querySelector('.tab:nth-child(2)').classList.add('active');
+                $('quizInfoBox').style.display = 'block';
+            } else {
+                $('global-panel').classList.add('active');
+                document.querySelector('.tab:nth-child(3)').classList.add('active');
+                $('sessionInfoBox').style.display = 'block';
+            }
+        }
+
+        function addMessage(containerId, sender, htmlContent) {
+            const container = $(containerId);
+            const div = document.createElement('div');
+            div.className = `message msg-${sender}`;
+            div.innerHTML = htmlContent;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // --- NDJSON STREAM READER (Specific for Syllabus Gen) ---
+        async function fetchNDJSONStream(url, payload, chatContainerId) {
+            log('REQUEST', { url, payload });
+            
+            if(payload.user_answer) addMessage(chatContainerId, 'user', payload.user_answer);
+            
+            const aiMsgId = 'ai-gen-' + Date.now();
+            addMessage(chatContainerId, 'ai', '<span id="'+aiMsgId+'">...</span>');
+            const aiContentSpan = $(aiMsgId);
+            aiContentSpan.innerText = "";
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while(true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    
+                    // Process complete lines
+                    for (let i = 0; i < lines.length - 1; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+                        
+                        try {
+                            const eventData = JSON.parse(line);
+                            
+                            if (eventData.event === 'metadata') {
+                                if (eventData.data.thread_id) {
+                                    state.genThreadId = eventData.data.thread_id;
+                                    $('displayGenThreadId').innerText = state.genThreadId;
+                                    log('STREAM', `Thread ID set: ${state.genThreadId}`);
+                                    // Enable generate button now that we have a thread
+                                    $('btnTriggerGen').disabled = false;
+                                }
+                            } else if (eventData.event === 'token') {
+                                aiContentSpan.innerText += eventData.data;
+                                $(chatContainerId).scrollTop = $(chatContainerId).scrollHeight;
+                            }
+                        } catch (e) {
+                            console.error("JSON Parse Error", e, line);
+                        }
+                    }
+                    // Keep the last partial line in buffer
+                    buffer = lines[lines.length - 1];
+                }
+
+            } catch (err) {
+                log('ERROR', err.message);
+                aiContentSpan.innerText += "\n[NETWORK ERROR]";
+            }
+        }
+
+        // --- SSE STREAM READER (For Quiz & Chat) ---
+        async function fetchSSEStream(url, payload, chatContainerId) {
+            log('REQUEST', { url, payload });
+            if(payload.userQuery) addMessage(chatContainerId, 'user', payload.userQuery);
+
+            const aiMsgId = 'ai-' + Date.now();
+            addMessage(chatContainerId, 'ai', '<span id="'+aiMsgId+'">...</span>');
+            const aiContentSpan = $(aiMsgId);
+            aiContentSpan.innerText = "";
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while(true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n\n');
+                    
+                    for(const line of lines) {
+                        if(line.startsWith('data: ')) {
+                            const jsonStr = line.replace('data: ', '');
+                            try {
+                                const data = JSON.parse(jsonStr);
+                                if (data.type === 'token') {
+                                    aiContentSpan.innerText += data.content;
+                                    $(chatContainerId).scrollTop = $(chatContainerId).scrollHeight;
+                                } 
+                                else if (data.type === 'end') {
+                                    log('STREAM', 'Stream Finished.');
+                                }
+                            } catch(e) { }
+                        }
+                    }
+                }
+            } catch (err) {
+                log('ERROR', err.message);
+            }
+        }
+
+
+        // =========================================================================
+        // 1. COURSE GENERATION LOGIC (CHAINED)
+        // =========================================================================
+        
+        async function startJourneyChain() {
+            state.baseUrl = $('baseUrl').value;
+            const text = $('genInputText').value;
+            const link = $('genInputLink').value;
+            
+            if(!text) return alert("Please enter a learning goal.");
+
+            // UI Reset
+            $('gen-chat').innerHTML = '';
+            $('metaStatus').style.display = 'block';
+            $('step1').innerText = '⏳ Generating Summary...';
+            $('step2').innerText = '⬜ Generating Details...';
+            $('step3').innerText = '⬜ Starting Stream...';
+            $('btnStartJourney').disabled = true;
+
+            try {
+                // --- STEP 1: Get Summary ---
+                log('REQUEST', `Generating Summary for: "${text}"`);
+                const res1 = await fetch(`${state.baseUrl}/metadata/first-generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_prompt: text })
+                });
+                if(!res1.ok) throw new Error("Failed to generate summary");
+                const summaryData = await res1.json();
+                
+                $('step1').innerText = '✅ Summary Generated';
+                $('step2').innerText = '⏳ Generating Details...';
+                log('RESPONSE', summaryData);
+
+                // --- STEP 2: Get Details ---
+                log('REQUEST', `Generating Details for: "${text}"`);
+                const res2 = await fetch(`${state.baseUrl}/metadata/second-generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_prompt: text })
+                });
+                if(!res2.ok) throw new Error("Failed to generate details");
+                const detailsData = await res2.json();
+
+                $('step2').innerText = '✅ Details Generated';
+                $('step3').innerText = '⏳ Starting Stream...';
+                log('RESPONSE', detailsData);
+
+                // --- STEP 3: Combine & Stream ---
+                // Fusion des deux objets JSON
+                const combinedMetadata = {
+                    ...summaryData,
+                    ...detailsData
+                };
+
+                const streamPayload = {
+                    user_input_text: text,
+                    user_input_links: link ? [link] : [],
+                    metadata: combinedMetadata // On envoie l'objet combiné
+                };
+
+                log('REQUEST', { msg: "Starting Stream with Metadata", payload: streamPayload });
+                
+                await fetchNDJSONStream(`${state.baseUrl}/stream_gen_syllabus`, streamPayload, 'gen-chat');
+                
+                $('step3').innerText = '✅ Stream Active';
+
+            } catch (e) {
+                log('ERROR', e.message);
+                alert("Error during initialization: " + e.message);
+                $('step1').innerText = '❌ Error';
+            } finally {
+                $('btnStartJourney').disabled = false;
+            }
+        }
+
+        async function replyJourney() {
+            if (!state.genThreadId) return alert("Start journey first!");
+            const answer = $('genReplyInput').value;
+            if(!answer) return;
+            $('genReplyInput').value = '';
+
+            const payload = { user_answer: answer };
+            await fetchNDJSONStream(`${state.baseUrl}/stream_gen_syllabus/${state.genThreadId}/continue`, payload, 'gen-chat');
+        }
+
+        async function triggerGeneration() {
+            if (!state.genThreadId) return alert("No thread ID found.");
+            
+            const url = `${state.baseUrl}/gen_syllabus/${state.genThreadId}/course`;
+            log('REQUEST', { url, method: 'POST' });
+
+            try {
+                const res = await fetch(url, { method: 'POST' });
+                const data = await res.json();
+                log('RESPONSE', data);
+                
+                $('genStatusText').innerText = "Task dispatched. Polling started...";
+                startPolling();
+
+            } catch(e) { alert(e); }
+        }
+
+        function startPolling() {
+            if (state.pollingInterval) clearInterval(state.pollingInterval);
+            
+            state.pollingInterval = setInterval(async () => {
+                const url = `${state.baseUrl}/gen_syllabus/${state.genThreadId}/status`;
+                try {
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    log('POLL', `Status: ${data.status} | Step: ${data.progress?.percentage}%`);
+
+                    // Update UI
+                    if(data.progress) {
+                        $('genProgressBar').style.width = data.progress.percentage + '%';
+                        $('genStatusText').innerText = `[${data.status}] ${data.progress.label}: ${data.progress.description}`;
+                    }
+
+                    // Check completion
+                    if (data.status === 'completed' || data.status.includes('failed')) {
+                        clearInterval(state.pollingInterval);
+                        if (data.status === 'completed') {
+                            $('genProgressBar').style.backgroundColor = 'var(--success)';
+                            $('genResultArea').style.display = 'block';
+                            $('genResultJson').innerText = JSON.stringify(data.output, null, 2);
+                        } else {
+                            $('genProgressBar').style.backgroundColor = 'var(--error)';
+                        }
+                    }
+                } catch(e) {
+                    console.error("Polling error", e);
+                }
+            }, 3000); // Poll every 3 seconds
+        }
+
+
+        // =========================================================================
+        // 2. QUIZ LOGIC
+        // =========================================================================
+
+        async function startQuiz() {
+            state.baseUrl = $('baseUrl').value;
+            const cId = $('courseId').value;
+            if(!cId) return alert('Course ID is required!');
+
+            const payload = {
+                courseId: cId,
+                scope: $('quizScope').value,
+                content_for_quiz: $('quizContent').value,
+                preferences: { difficulty: "Intermediate", questionCount: 3 }
+            };
+
+            log('REQUEST', payload);
+
+            try {
+                const res = await fetch(`${state.baseUrl}/quiz-attempts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                log('RESPONSE', data);
+
+                if(data.attemptId) {
+                    state.attemptId = data.attemptId;
+                    state.currentQuestions = data.questions;
+                    $('displayAttemptId').innerText = data.attemptId;
+                    $('quiz-start-screen').style.display = 'none';
+                    $('quiz-active-screen').style.display = 'block';
+                    renderQuestion(0);
+                }
+            } catch(e) { alert('Error starting quiz: ' + e); }
+        }
+
+        function renderQuestion(index) {
+            if(index >= state.currentQuestions.length) return alert("Quiz Finished locally. Click Finish.");
+            
+            const q = state.currentQuestions[index];
+            state.currentQuestionId = q.questionId;
+            
+            $('q-title').innerText = `Question ${index + 1} / ${state.currentQuestions.length}`;
+            $('q-text').innerText = q.questionText;
+            
+            const optsDiv = $('q-options');
+            optsDiv.innerHTML = '';
+            
+            q.options.forEach((opt, idx) => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn';
+                btn.innerText = `${["A","B","C","D"][idx]}. ${opt}`;
+                btn.onclick = () => submitAnswer(idx);
+                optsDiv.appendChild(btn);
+            });
+        }
+
+        async function submitAnswer(index) {
+            document.querySelectorAll('.option-btn').forEach(b => b.disabled = true);
+            const url = `${state.baseUrl}/quiz-attempts/${state.attemptId}/answer`;
+            await fetchSSEStream(url, { questionId: state.currentQuestionId, answerIndex: index }, 'quiz-chat');
+            
+            setTimeout(() => {
+                const currentIdx = state.currentQuestions.findIndex(q => q.questionId === state.currentQuestionId);
+                if(currentIdx < state.currentQuestions.length - 1) {
+                    const nextBtn = document.createElement('button');
+                    nextBtn.className = 'btn-primary';
+                    nextBtn.innerText = "Next Question ->";
+                    nextBtn.style.marginTop = "10px";
+                    nextBtn.onclick = () => renderQuestion(currentIdx + 1);
+                    $('q-options').appendChild(nextBtn);
+                }
+            }, 1000);
+        }
+
+        async function skipQuestion() {
+            const url = `${state.baseUrl}/quiz-attempts/${state.attemptId}/skip`;
+            await fetchSSEStream(url, { questionId: state.currentQuestionId }, 'quiz-chat');
+        }
+
+        async function getQuizHint() {
+            // GET stream manual implementation
+            const url = `${state.baseUrl}/quiz-attempts/${state.attemptId}/questions/${state.currentQuestionId}/hint`;
+            log('REQUEST', { url, method: 'GET' });
+            
+            addMessage('quiz-chat', 'user', 'Give me a hint.');
+            const aiMsgId = 'hint-' + Date.now();
+            addMessage('quiz-chat', 'ai', '<span id="'+aiMsgId+'">...</span>');
+            
+            const response = await fetch(url);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const aiSpan = $(aiMsgId);
+            aiSpan.innerText = "";
+
+            while(true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+                for(const line of lines) {
+                    if(line.startsWith('data: ')) {
+                        const data = JSON.parse(line.replace('data: ', ''));
+                        if (data.type === 'token') aiSpan.innerText += data.content;
+                    }
+                }
+            }
+        }
+
+        async function askQuizBot() {
+            const query = $('quizAskInput').value;
+            if(!query) return;
+            $('quizAskInput').value = '';
+            const url = `${state.baseUrl}/quiz-attempts/${state.attemptId}/ask`;
+            await fetchSSEStream(url, { userQuery: query, questionId: state.currentQuestionId }, 'quiz-chat');
+        }
+
+        async function finishQuiz() {
+            const url = `${state.baseUrl}/quiz-attempts/${state.attemptId}/summary`;
+            log('REQUEST', { url, method: 'GET' });
+            addMessage('quiz-chat', 'system', 'Generating Summary...');
+            
+            const aiMsgId = 'summary-' + Date.now();
+            addMessage('quiz-chat', 'ai', '<span id="'+aiMsgId+'">...</span>');
+            const response = await fetch(url);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const aiSpan = $(aiMsgId);
+            aiSpan.innerText = "";
+
+            while(true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n\n');
+                for(const line of lines) {
+                    if(line.startsWith('data: ')) {
+                        const data = JSON.parse(line.replace('data: ', ''));
+                        if (data.type === 'token') aiSpan.innerText += data.content;
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // 3. GLOBAL CHAT LOGIC
+        // =========================================================================
+
+        async function createSession() {
+            state.baseUrl = $('baseUrl').value;
+            const courseId = $('courseId').value;
+            if(!courseId) return alert('Course ID required');
+            
+            const payload = {
+                title: $('globalTitle').value,
+                scope: $('globalScope').value,
+                sectionIndex: 0
+            };
+
+            const res = await fetch(`${state.baseUrl}/courses/${courseId}/sessions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            log('RESPONSE', data);
+            
+            state.sessionId = data.sessionId;
+            $('displaySessionId').innerText = data.sessionId;
+            $('global-chat').innerHTML = '<div class="message msg-system">Session Created. Start talking!</div>';
+            loadSessions();
+        }
+
+        async function loadSessions() {
+            state.baseUrl = $('baseUrl').value;
+            const courseId = $('courseId').value;
+            if(!courseId) return alert('Course ID required');
+
+            const res = await fetch(`${state.baseUrl}/courses/${courseId}/sessions`);
+            const sessions = await res.json();
+            
+            const list = $('sessionList');
+            list.innerHTML = '';
+            sessions.forEach(s => {
+                const btn = document.createElement('button');
+                btn.className = 'btn-secondary';
+                btn.style.fontSize = '0.8rem';
+                btn.innerHTML = `<strong>${s.title}</strong> <span style="font-size:0.7rem">(${s.scope})</span>`;
+                btn.onclick = () => loadSessionHistory(s.sessionId);
+                list.appendChild(btn);
+            });
+        }
+
+        async function loadSessionHistory(sessionId) {
+            state.baseUrl = $('baseUrl').value;
+            state.sessionId = sessionId;
+            $('displaySessionId').innerText = sessionId;
+            
+            const res = await fetch(`${state.baseUrl}/sessions/${sessionId}/messages`);
+            const msgs = await res.json();
+            
+            const container = $('global-chat');
+            container.innerHTML = '';
+            msgs.forEach(m => addMessage('global-chat', m.sender, m.content));
+            log('RESPONSE', `Loaded ${msgs.length} messages.`);
+        }
+
+        async function askGlobalBot() {
+            if(!state.sessionId) return alert("Select or create a session first.");
+            
+            const query = $('globalAskInput').value;
+            if(!query) return;
+            $('globalAskInput').value = '';
+
+            const url = `${state.baseUrl}/sessions/${state.sessionId}/ask`;
+            await fetchSSEStream(url, { userQuery: query }, 'global-chat');
+            setTimeout(loadSessions, 3000); 
+        }
+
+        // Init
+        $('courseId').value = localStorage.getItem('lastCourseId') || '';
+        $('courseId').addEventListener('change', (e) => localStorage.setItem('lastCourseId', e.target.value));
+    </script>
+</body>
+</html>

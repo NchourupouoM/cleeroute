@@ -23,6 +23,10 @@ from .dependencies import get_conversation_graph, get_syllabus_graph
 from .tasks import generate_syllabus_task
 from .models import JourneyProgress, JourneyStatusResponse
 
+# for treamings APIs 
+from fastapi.responses import StreamingResponse
+import json
+
 # Create a new router instance
 # This allows us to group all related endpoints under a common prefix and tag
 syllabus_router = APIRouter()
