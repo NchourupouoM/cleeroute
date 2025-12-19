@@ -72,6 +72,11 @@ class SyllabusRequest(BaseModel):
     )
     metadata: Course_meta_datas
 
+    language: str = Field(
+        default="English", 
+        description="The target language for the course content and interaction (e.g., 'French', 'Spanish', 'Swahili')."
+    )
+
 # --------------------------
 # YouTube / Video models
 # --------------------------

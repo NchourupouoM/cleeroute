@@ -46,7 +46,7 @@ def get_youtube_service():
 def initialize_state(state: GraphState) -> dict: # <-- Retourne un dict
     """Initializes non-input fields of the state."""
     print("--- State Initialized ---")
-    # On retourne un dictionnaire avec TOUTES les clés à initialiser.
+    lang = state['language'] if 'language' in state else "English"
     return {
         'conversation_history': [],
         'current_question': None,
@@ -56,7 +56,8 @@ def initialize_state(state: GraphState) -> dict: # <-- Retourne un dict
         'searched_playlists_str': [],
         'merged_resources_str': [],
         'final_syllabus_options_str': None,
-        'status': "starting"
+        'status': "starting",
+        "language": lang
     }
 
 async def generate_search_strategy(state: GraphState) -> dict:
@@ -71,7 +72,8 @@ async def generate_search_strategy(state: GraphState) -> dict:
         user_input=state['user_input_text'],
         desired_level=metadata.desired_level,
         topics=metadata.topics,
-        conversation_summary=conversation_summary
+        conversation_summary=conversation_summary,
+        language=state['language']
     )
 
     response = await llm.ainvoke(prompt)
@@ -173,7 +175,8 @@ async def search_resources(state: GraphState) -> dict:
         try:
             playlists = await search_and_filter_youtube_playlists(
                 queries=state['search_queries'],
-                user_input=state['user_input_text']
+                user_input=state['user_input_text'],
+                language=state['language']
             )
             print(f"--- Found and filtered {len(playlists)} high-quality playlists ---")
             return {"searched_playlists_str": [PydanticSerializer.dumps(p) for p in playlists], "status": "resources_searched"}
@@ -202,11 +205,14 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
     llm = get_llm()
     # # On désérialise les métadonnées pour les rendre lisibles
     metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
+
+    # print("language:", state['language'])
     
     prompt = Prompts.HUMAN_IN_THE_LOOP_CONVERSATION.format(
         history=history_str,
         user_input=state['user_input_text'],
-        metadata=metadata.model_dump_json(indent=2)
+        metadata=metadata.model_dump_json(indent=2),
+        language=state['language']
     )
 
     response = await llm.ainvoke(prompt)
@@ -215,7 +221,19 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
 
     if "[CONVERSATION_FINISHED]" in content:
         print("--- Conversation Finished ---")
-        return {"is_conversation_finished": True, "current_question": None}
+
+        # On extrait le message après le tag
+        # Le split sépare le tag du texte qui suit
+        parts = content.split("[CONVERSATION_FINISHED]")
+
+        # Si le LLM a bien mis du texte après, on le prend et on le nettoie
+        closing_message = parts[1].strip() if len(parts) > 1 else ""
+
+        # Fallback de sécurité si le message est vide (rare)
+        if not closing_message:
+            closing_message = "Generating course..."
+
+        return {"is_conversation_finished": True, "current_question": closing_message}
     else:
         question = content
         print(f"--- Asking User: {question} ---")
@@ -325,7 +343,8 @@ async def plan_syllabus(state: GraphState) -> dict:
             conversation_summary=conversation_summary,
             playlist_title=playlist.playlist_title,
             playlist_videos_summary=playlist_videos_summary,
-            retry_instruction=retry_instruction
+            retry_instruction=retry_instruction,
+            language=state['language']
         )
 
         llm = get_llm()

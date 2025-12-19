@@ -54,6 +54,8 @@ class GraphState(TypedDict):
     user_input_links: Annotated[Optional[List[str]], _overwrite] # Stored as string
     metadata_str: Annotated[str, _overwrite] # Stored as str # Serialized Course_meta_datas
 
+    language: Annotated[str, _overwrite]
+
     # --- Conversation / HITL ---
     conversation_history: Annotated[List[tuple[str, str]], operator.add ] # List of (human_message, ai_message)
     current_question: Annotated[Optional[str], _overwrite]

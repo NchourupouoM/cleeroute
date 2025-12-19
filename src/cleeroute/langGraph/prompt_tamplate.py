@@ -1,12 +1,41 @@
 # ==================================== Prompts for Meta data of a course =====================================
 SUMMARY_PROMPT = [
-    ("system", "You are an expert in educational taxonomy. Your task is to extract the core metadata for a new course, including its title, knowledge domains, specific categories, and detailed topics. You must output a JSON object strictly adhering to the `Course_summary` schema."),
-    ("human", "Generate a concise course summary based on the following main request:\n\nMain Request: {prompt}\n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_summary` structure."),
+    ("system", """You are an expert in educational taxonomy.
+     
+     **Target Language:** {language}
+     
+     Your task is to extract the core metadata for a new course, including its title, knowledge domains, specific categories, and detailed topics. You must output a JSON object strictly adhering to the `Course_summary` schema.
+     
+     **CRITICAL JSON RULES:**
+		1. You MUST output a valid JSON object matching the `Course_summary` schema.
+		2. **KEYS:** The keys (e.g., "title", "domains", "topics") MUST remain in **ENGLISH**.
+		3. **VALUES:** The content (e.g., the actual title text, the list of topics) MUST be written in **{language}**.
+		
+		Example (if language is French):
+		{{
+		"title": "Introduction à l'IA", 
+		"domains": ["Intelligence Artificielle"],
+		...
+		}}
+     
+     """),
+    ("human", "Generate a concise course summary in {language} based on the following main request:\n\nMain Request: {prompt}\n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_summary` structure."),
 ]
 
 DETAILS_PROMPT = [
-    ("system", "You are an expert in instructional design. Your task is to elaborate on the learning goals and requirements for a course, use first language person. You must output a JSON object strictly adhering to the `Course_details` schema."),
-    ("human", "Elaborate on the course details based on the following main request and existing summary information:\n\nMain Request: {prompt}\n\nExisting Summary (use this for consistency): \n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object that matches the `Course_details` structure.for objectives, use first personnal language and Ensure the 'desired_level' field is one of 'Beginner', 'Intermediate', or 'Advanced'."),
+    ("system", """"You are an expert in instructional design. 
+     
+     **Target Language:** {language}
+     
+     Your task is to elaborate on the learning goals and requirements for a course, use first language person. 
+     
+	**CRITICAL JSON RULES:**
+		1. Output valid JSON matching `Course_details`.
+		2. **KEYS:** Keep keys (objectives, prerequisites...) in **ENGLISH**.
+		3. **VALUES:** Write the content in **{language}**.
+		4. **LEVEL:** The 'desired_level' value MUST remain one of the specific English enums: 'Beginner', 'Intermediate', 'Advanced' (do not translate the enum value itself, or ensure Pydantic maps it, but usually keeping enums strictly technical is safer).
+     """),
+    ("human", "Elaborate on the course details based on the following main request and existing summary information:\n\nMain Request: {prompt}\n\nExisting Summary (use this for consistency): \n\nAdditional Context (if any): {context}\n\nProvide the output strictly as a JSON object in {language} that matches the `Course_details` structure.for objectives, use first personnal language and Ensure the 'desired_level' field is one of 'Beginner', 'Intermediate', or 'Advanced'."),
 ]
 
 COURSE_STRUCTURE_PROMPT = """

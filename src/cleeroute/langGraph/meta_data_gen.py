@@ -75,6 +75,10 @@ app = FastAPI(
 # Modèle de requête commun pour les deux endpoints (seulement user_prompt)
 class SinglePromptRequest(BaseModel):
     user_prompt: str = Field(..., example="Learning langgraph and langchain for AI applications in education.")
+    language: str = Field(
+        default="English", 
+        description="Target language for the metadata generation (e.g., 'French', 'Spanish')."
+    )
 
 contexte_data = CONTEXTE
 
@@ -109,7 +113,8 @@ async def generate_summary_endpoint(
         
         summary_proposal = summary_llm_chain.invoke({
             "prompt": request.user_prompt,
-            "context": context_for_llm
+            "context": context_for_llm,
+            "language": request.language
         })
         end_time = time.perf_counter()
         generation_time = end_time - start_time
@@ -155,7 +160,8 @@ async def generate_details_endpoint(
 
         details_proposal = details_llm_chain.invoke({
             "prompt": request.user_prompt,
-            "context": request.user_prompt
+            "context": request.user_prompt,
+            "language": request.language
         })
         end_time = time.perf_counter()
         generation_time = end_time - start_time

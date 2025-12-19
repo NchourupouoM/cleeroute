@@ -187,7 +187,7 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
 # SEARCH & FILTER SERVICES
 # ==============================================================================
 
-async def search_and_filter_youtube_playlists(queries: List[str], user_input: str):
+async def search_and_filter_youtube_playlists(queries: List[str], user_input: str, language: str):
     print("--- Starting High-Quality YouTube Search ---")
 
     async def search_task(query: str):
@@ -254,7 +254,8 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
         candidates_str = json.dumps(newest_candidates, indent=2)
         prompt = Prompts.FILTER_YOUTUBE_PLAYLISTS.format(
             user_input=user_input,
-            playlist_candidates=candidates_str
+            playlist_candidates=candidates_str,
+            language=language
         )
 
         selected_ids = []

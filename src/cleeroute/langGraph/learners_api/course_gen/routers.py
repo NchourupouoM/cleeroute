@@ -73,7 +73,8 @@ async def start_learning_journey(
     initial_state = GraphState(
         user_input_text=request.user_input_text,
         user_input_links=user_links_str,
-        metadata_str=PydanticSerializer.dumps(request.metadata)
+        metadata_str=PydanticSerializer.dumps(request.metadata),
+        language=request.language 
     )
 
     # Stream the graph. It will run until the first interruption (the first question).
@@ -163,11 +164,18 @@ async def continue_learning_journey(
 
     # Le reste de la fonction est déjà correct.
     if final_state and final_state.get('is_conversation_finished'):
-        # On a changé ce statut dans une version précédente. Assurons-nous qu'il est cohérent.
+
+        # On récupère le message personnalisé généré par l'IA (stocké dans current_question par le nœud)
+        final_message = final_state.get('current_question')
+
+        # Fallback ultime
+        if not final_message:
+            final_message = "Course generation started."
+
         return JourneyStatusResponse(
             status="conversation_finished",
             thread_id=thread_id,
-            next_question="Thank you for the details. You can now proceed to generate the course."
+            next_question=final_message
         )
     elif final_state and final_state.get('current_question'):
          return JourneyStatusResponse(
