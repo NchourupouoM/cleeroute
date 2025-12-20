@@ -276,14 +276,14 @@ stream_global_chat_router = APIRouter()
 async def ask_in_session(
     sessionId: str,
     request: ChatAskRequest,
-    user_id: str = Header(..., alias="X-User-Id"),
+    userId: str = Header(..., alias="userId"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
     Version STREAMING du chat global.
     Envoie des événements SSE: 'token' (contenu) et 'end' (fin + métadonnées).
     """
-    profile = await get_user_profile(user_id, db)
+    profile = await get_user_profile(userId, db)
     persona_block = build_personalization_block(profile)
 
     # 1. Préparation des données (Identique à avant)

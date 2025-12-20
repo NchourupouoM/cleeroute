@@ -53,7 +53,7 @@ quiz_router = APIRouter()
 async def start_quiz_attempt(
     request: StartQuizRequest,
     graph: Pregel = Depends(get_quiz_graph),
-    user_id: str = Header(..., alias="X-User-Id"),
+    userId: str = Header(..., alias="userId"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -75,7 +75,7 @@ async def start_quiz_attempt(
     config = {"configurable": {"thread_id": attempt_id}}
     courseId = request.courseId
 
-    profile = await get_user_profile(user_id, db)
+    profile = await get_user_profile(userId, db)
 
     # --- ÉTAPE 1: Préparer l'état initial pour le graphe ---
     # Le graphe a besoin de toutes ces informations pour générer le contenu.
@@ -636,7 +636,7 @@ async def get_session_messages(
 async def ask_in_session(
     sessionId: str,
     request: ChatAskRequest,
-    user_id: str = Header(..., alias="X-User-Id"),
+    userId: str = Header(..., alias="userId"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -657,7 +657,7 @@ async def ask_in_session(
         Returns:\\
             MessageResponse: The AI's response and the creation timestamp.
     """
-    profile = await get_user_profile(user_id, db)
+    profile = await get_user_profile(userId, db)
     persona_block = build_personalization_block(profile)
 
     # A. Récupérer les infos de la session (Scope & course_id)
