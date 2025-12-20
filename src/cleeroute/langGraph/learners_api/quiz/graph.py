@@ -4,6 +4,7 @@ from typing import Literal, Optional, List
 from langgraph.graph import StateGraph, END
 from langgraph.pregel import Pregel
 import asyncio
+import json
 
 from src.cleeroute.db.checkpointer import get_checkpointer # Votre checkpointer existant
 from .models import QuizGraphState, ChatMessage,QuizContent, QuizQuestionInternal # Les modèles que nous venons de créer
@@ -12,6 +13,10 @@ from .prompts import * # Importer tous les nouveaux prompts
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.cleeroute.langGraph.learners_api.course_gen.state import PydanticSerializer
+
+from src.cleeroute.langGraph.learners_api.quiz.user_service import build_personalization_block
+from src.cleeroute.langGraph.learners_api.quiz.models import UserProfile
+
 
 # Initialisation du LLM
 llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
@@ -24,6 +29,11 @@ async def generate_questions_node(state: QuizGraphState) -> dict:
     context = state['context']
     prefs = state['preferences']
     content_summary = context.get('content_for_quiz')
+
+    profile_data = json.loads(state["user_profile"])
+    profile = UserProfile(**profile_data)
+
+    persona_block = build_personalization_block(profile=profile)
 
     if not content_summary:
         print("--- FATAL ERROR: No content provided to generate quiz questions. ---")
@@ -39,7 +49,9 @@ async def generate_questions_node(state: QuizGraphState) -> dict:
             subsection_title=context.get('subsectionId'),
             content_summary=content_summary,
             difficulty=prefs.get('difficulty', 'Intermediate'),
-            question_count=prefs.get('questionCount', 5)
+            question_count=prefs.get('questionCount', 5),
+            personalization_block=persona_block,
+            language=profile.language
         )
         
         # Configure le LLM pour qu'il retourne notre nouvel objet conteneur
@@ -84,6 +96,11 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
     payload = interaction["payload"]
     question_id = payload.get("questionId")
 
+    # Récupération profil
+    profile_data = json.loads(state["user_profile"])
+    profile = UserProfile(**profile_data)
+    persona_block = build_personalization_block(profile)
+
     print(f"--- [QUIZ GRAPH] NODE: Processing Interaction of type '{interaction_type}' for Q: {question_id} ---")
 
     try:
@@ -102,7 +119,6 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
 
     if not target_question and interaction_type != 'ask':
         return state
-    user_message_content = ""
 
     if interaction_type == "answer":
         user_answer_index = payload["answerIndex"]
@@ -121,10 +137,10 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
             options_str=str(target_question.options),
             correct_answer_text=target_question.options[target_question.correctAnswerIndex],
             explanation=target_question.explanation,
-            student_answer_text=target_question.options[user_answer_index]
+            student_answer_text=target_question.options[user_answer_index],
+            personalization_block=persona_block,
+            language=profile.language
         )
-
-        # user_message_content = f"Answered question '{target_question.questionText}' with: '{target_question.options[user_answer_index]}'"
 
         response = await llm.ainvoke(prompt)
         

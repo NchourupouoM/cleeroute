@@ -4,7 +4,7 @@ import uuid
 import json
 import asyncio
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from langgraph.pregel import Pregel
 from langchain_core.messages import HumanMessage, AIMessage
 from psycopg.connection_async import AsyncConnection
@@ -32,6 +32,10 @@ load_dotenv()
 
 from .prompts import GLOBAL_CHAT_PROMPT, GENERATE_SESSION_TITLE_PROMPT
 
+from src.cleeroute.langGraph.learners_api.quiz.user_service import get_user_profile
+from src.cleeroute.langGraph.learners_api.quiz.user_service import build_personalization_block
+
+
 from .course_context_for_global_chat import get_student_quiz_context, extract_context_from_course, fetch_course_hierarchy
 
 qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
@@ -47,8 +51,9 @@ quiz_router = APIRouter()
         500: {"description": "Failed to generate questions via AI or save to database."}
     })
 async def start_quiz_attempt(
-    request: StartQuizRequest, 
+    request: StartQuizRequest,
     graph: Pregel = Depends(get_quiz_graph),
+    user_id: str = Header(..., alias="X-User-Id"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -70,6 +75,8 @@ async def start_quiz_attempt(
     config = {"configurable": {"thread_id": attempt_id}}
     courseId = request.courseId
 
+    profile = await get_user_profile(user_id, db)
+
     # --- ÉTAPE 1: Préparer l'état initial pour le graphe ---
     # Le graphe a besoin de toutes ces informations pour générer le contenu.
     context_data = {
@@ -81,7 +88,8 @@ async def start_quiz_attempt(
         "attemptId": attempt_id,
         "context": context_data,
         "preferences": request.preferences,
-        "user_answers": {}, # S'assurer que ce champ est initialisé
+        "user_answers": {},
+        "user_profile": profile.model_dump_json()
     }
     
     print(f"--- [API] Invoking quiz graph for attempt '{attempt_id}'... ---")
@@ -628,6 +636,7 @@ async def get_session_messages(
 async def ask_in_session(
     sessionId: str,
     request: ChatAskRequest,
+    user_id: str = Header(..., alias="X-User-Id"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -648,6 +657,9 @@ async def ask_in_session(
         Returns:\\
             MessageResponse: The AI's response and the creation timestamp.
     """
+    profile = await get_user_profile(user_id, db)
+    persona_block = build_personalization_block(profile)
+
     # A. Récupérer les infos de la session (Scope & course_id)
     cursor = await db.execute(
         "SELECT course_id, scope, section_index, subsection_index, video_id FROM chat_sessions WHERE session_id = %s",
@@ -715,7 +727,8 @@ async def ask_in_session(
             "scope": scope,
             "context_text": context_text,
             "history": langchain_history,
-            "user_query": request.userQuery
+            "user_query": request.userQuery,
+            "persona_block": persona_block
         })
         answer_text = ai_response.content
     except Exception as e:

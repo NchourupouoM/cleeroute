@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field, HttpUrl
 from typing import List, Optional, Literal, Dict, TypedDict, Any
 from datetime import datetime
+from enum import Enum
 
 # ==============================================================================
 # 1. MODÈLES POUR LES QUESTIONS DU QUIZ
@@ -59,7 +60,8 @@ class ChatMessage(BaseModel):
 # --- Requêtes (ce que le frontend envoie) ---
 
 class StartQuizRequest(BaseModel):
-    """Corps de la requête pour POST /api/v1/quiz-attempts."""
+    """Corps de la requête pour /quiz-attempts."""
+    userId: str = Field(..., description="the user id who is taking the quiz")
     scope: Literal["course", "section", "subsection", "video"]
     courseId: str # ID du cours
     sectionId: Optional[str] = None
@@ -77,6 +79,7 @@ class StartQuizRequest(BaseModel):
         json_schema_extra = {
             "examples": [
                 {
+                        "userId": "user_uuid_12345",
                         "scope": "subsection",
                         "courseId": "99fcc399-0c47-4dda-ba70-542ff30d94d7",
                         "sectionId": "section_uuid_67890",
@@ -176,6 +179,8 @@ class QuizGraphState(TypedDict):
 
     current_interaction: Optional[Dict]
 
+    user_profile: str 
+
 
 
 # Model for libre QA 
@@ -271,4 +276,28 @@ class ChatAskRequest(BaseModel):
                 }
             ]
         }
+
+
+# user profile 
+
+class ResponseStyle(str, Enum):
+    CASUAL = "Casual/Informal"
+    FORMAL = "Formal"
+    CONCISE = "Concise"
+    HUMOROUS = "Humorous"
+    EMPATHIC = "Empathic"
+    SIMPLIFIED = "Simplified/Scaffolded"
+    SOCRATIC = "Socratic (Ask questions back)"
+
+class UserProfile(BaseModel):
+    """
+    Contient les données métier pour la personnalisation.
+    Ces données viennent de votre table 'users' ou 'profiles'.
+    """
+    user_id: str
+    language: str = "English"
+    profession: str = "Learner" # ex: "Software Engineer", "Nurse"
+    industry: str = "General"   # ex: "Tech", "Healthcare"
+    motivation: str = "Personal Growth" # ex: "To get a promotion"
+    response_style: ResponseStyle = ResponseStyle.CASUAL
 

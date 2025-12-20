@@ -3,7 +3,9 @@
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 
 GENERATE_QUIZ_CONTENT_PROMPT = PromptTemplate.from_template(
-"""You are an expert AI Quiz Generator. Your task is to create a complete quiz package, including a title and a set of high-quality, multiple-choice questions, based on a specific learning context.
+"""You are an expert AI Quiz Generator. Your task is to create a complete quiz package, including a title and a set of high-quality, multiple-choice questions, based on a specific learning context in {language}.
+
+{personalization_block}
 
 **Context for the Quiz:**
 - **Scope:** {scope}
@@ -33,7 +35,9 @@ The content must be strictly relevant to the provided summary and tailored to th
 
 
 EVALUATE_ANSWER_PROMPT = PromptTemplate.from_template(
-"""You are an encouraging AI Tutor. A student has just answered a quiz question. Your task is to provide helpful feedback.
+"""You are an encouraging AI Tutor. A student has just answered a quiz question. Your task is to provide helpful feedback in {language}, the language's student.
+
+{personalization_block}
 
 **Question Context:**
 - **Question:** "{question_text}"
@@ -147,6 +151,8 @@ A student has a question about the material.
 
 GLOBAL_CHAT_SYSTEM = """You are an expert AI Mentor for this course.
 Your goal is to help the student master the material based on the specific context they have chosen.
+
+{personalization_block}
 
 **Student Profile (Recent Quiz Activity):**
 {student_quiz_context}
