@@ -4,7 +4,7 @@ import uuid
 import json
 import asyncio
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from langgraph.pregel import Pregel
 from langchain_core.messages import HumanMessage, AIMessage
 from psycopg.connection_async import AsyncConnection
@@ -34,6 +34,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .prompts import GLOBAL_CHAT_PROMPT, GENERATE_SESSION_TITLE_PROMPT
+
+
+from src.cleeroute.langGraph.learners_api.quiz.user_service import get_user_profile
+from src.cleeroute.langGraph.learners_api.quiz.user_service import build_personalization_block
 
 from .course_context_for_global_chat import get_student_quiz_context, extract_context_from_course, fetch_course_hierarchy
 
@@ -272,13 +276,16 @@ stream_global_chat_router = APIRouter()
 async def ask_in_session(
     sessionId: str,
     request: ChatAskRequest,
+    user_id: str = Header(..., alias="X-User-Id"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
     Version STREAMING du chat global.
     Envoie des événements SSE: 'token' (contenu) et 'end' (fin + métadonnées).
     """
-    
+    profile = await get_user_profile(user_id, db)
+    persona_block = build_personalization_block(profile)
+
     # 1. Préparation des données (Identique à avant)
     cursor = await db.execute(
         "SELECT course_id, scope, section_index, subsection_index, video_id FROM chat_sessions WHERE session_id = %s",
@@ -327,7 +334,8 @@ async def ask_in_session(
         "scope": scope,
         "context_text": context_text,
         "history": langchain_history,
-        "user_query": request.userQuery
+        "user_query": request.userQuery,
+        "personalization_block": persona_block
     }
 
     # --- LE GÉNÉRATEUR ASYNCHRONE ---
