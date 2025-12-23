@@ -25,8 +25,8 @@ async def get_user_profile(user_id: str, db: AsyncConnection = Depends(get_app_d
         # On suppose une table 'users' avec ces colonnes
         cursor = await db.execute(
             """
-            SELECT language, professional_status, industry, motivation, response_style 
-            FROM users 
+            SELECT preferred_language, professional_status, industries, motivation, ai_response_type 
+            FROM  profiles
             WHERE id = %s
             """, 
             (user_id,)

@@ -157,14 +157,19 @@ Your goal is to help the student master the material based on the specific conte
 **Student Profile (Recent Quiz Activity):**
 {student_quiz_context}
 
+**Uploaded Documents Context (RAG):**
+{uploaded_docs_context}
+
 **Current Learning Context (Scope: {scope}):**
 {context_text}
 
 **Instructions:**
+
 1. Use the course context to answer accurately.
 2. Use the conversation history to maintain continuity.
 3. Reference the student's quiz performance if relevant.
 4. If the scope is a video, assume the student is watching it right now.
+5. If "USER UPLOADED FILES" are provided above, they are the absolute priority. Answer questions based on that content first.
 """
 
 GLOBAL_CHAT_PROMPT = ChatPromptTemplate.from_messages([

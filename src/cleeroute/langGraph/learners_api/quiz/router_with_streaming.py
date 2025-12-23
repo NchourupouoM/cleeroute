@@ -36,10 +36,13 @@ load_dotenv()
 from .prompts import GLOBAL_CHAT_PROMPT, GENERATE_SESSION_TITLE_PROMPT
 
 
-from src.cleeroute.langGraph.learners_api.quiz.user_service import get_user_profile
-from src.cleeroute.langGraph.learners_api.quiz.user_service import build_personalization_block
+from src.cleeroute.langGraph.learners_api.quiz.services.user_service import get_user_profile
+from src.cleeroute.langGraph.learners_api.quiz.services.user_service import build_personalization_block
 
 from .course_context_for_global_chat import get_student_quiz_context, extract_context_from_course, fetch_course_hierarchy
+
+from src.cleeroute.langGraph.learners_api.quiz.services.ingestion_services import FileIngestionService
+
 
 qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -270,6 +273,7 @@ async def get_summary(
 
     return StreamingResponse(summary_stream_generator(), media_type="text/event-stream")
 
+ingestion_service = FileIngestionService()
 
 stream_global_chat_router = APIRouter()
 @stream_global_chat_router.post("/stream-sessions/{sessionId}/ask")
@@ -324,6 +328,16 @@ async def ask_in_session(
             langchain_history.append(HumanMessage(content=content))
         else:
             langchain_history.append(AIMessage(content=content))
+    
+    # Récupération du contexte RAG (documents uploadés)
+    try:
+        uploaded_docs_context = await ingestion_service.retrieve_relevant_context(
+            session_id=sessionId,
+            db=db,
+        )
+    except Exception as e:
+        print(f"Context Retrieval Error: {e}")
+        uploaded_docs_context = ""
 
     # Préparation de la chaîne
     chain = GLOBAL_CHAT_PROMPT | qa_llm
@@ -335,7 +349,8 @@ async def ask_in_session(
         "context_text": context_text,
         "history": langchain_history,
         "user_query": request.userQuery,
-        "personalization_block": persona_block
+        "personalization_block": persona_block,
+        "uploaded_docs_context": uploaded_docs_context
     }
 
     # --- LE GÉNÉRATEUR ASYNCHRONE ---

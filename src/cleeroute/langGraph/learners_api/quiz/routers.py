@@ -4,7 +4,7 @@ import uuid
 import json
 import asyncio
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, UploadFile, File, BackgroundTasks
 from langgraph.pregel import Pregel
 from langchain_core.messages import HumanMessage, AIMessage
 from psycopg.connection_async import AsyncConnection
@@ -32,11 +32,13 @@ load_dotenv()
 
 from .prompts import GLOBAL_CHAT_PROMPT, GENERATE_SESSION_TITLE_PROMPT
 
-from src.cleeroute.langGraph.learners_api.quiz.user_service import get_user_profile
-from src.cleeroute.langGraph.learners_api.quiz.user_service import build_personalization_block
+from src.cleeroute.langGraph.learners_api.quiz.services.user_service import get_user_profile
+from src.cleeroute.langGraph.learners_api.quiz.services.user_service import build_personalization_block
 
 
 from .course_context_for_global_chat import get_student_quiz_context, extract_context_from_course, fetch_course_hierarchy
+
+from src.cleeroute.langGraph.learners_api.quiz.services.ingestion_services import FileIngestionService
 
 qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -718,7 +720,18 @@ async def ask_in_session(
         else:
             langchain_history.append(AIMessage(content=content))
 
-    # E. Invocation du LLM
+    # E. Récupérer le contexte RAG des documents uploadés
+    try:
+        uploaded_docs_context = await ingestion_service.retrieve_relevant_context(
+            session_id=sessionId,
+            db=db,
+        )
+    except Exception as e:
+        print(f"Context Retrieval Error: {e}")
+        uploaded_docs_context = ""
+    
+
+    # F. Invocation du LLM
     chain = GLOBAL_CHAT_PROMPT | qa_llm
     
     try:
@@ -728,14 +741,15 @@ async def ask_in_session(
             "context_text": context_text,
             "history": langchain_history,
             "user_query": request.userQuery,
-            "persona_block": persona_block
+            "personalization_block": persona_block,
+            "uploaded_docs_context": uploaded_docs_context,
         })
         answer_text = ai_response.content
     except Exception as e:
         print(f"LLM Error: {e}")
         raise HTTPException(status_code=500, detail="AI generation failed")
 
-    # F. Sauvegarde des messages et mise à jour de la session
+    # G. Sauvegarde des messages et mise à jour de la session
     try:
         await db.execute(
             """
@@ -769,3 +783,49 @@ async def ask_in_session(
         print(f"DB Save Error: {e}")
 
     return MessageResponse(sender="ai", content=answer_text, createdAt=datetime.now())
+
+
+# cet endpoint permet d'uploader un fichier .pdf, .docs, image et l'ajoute au contexte du global chat.
+
+ingestion_service = FileIngestionService()
+
+@global_chat_router.post("/sessions/{sessionId}/upload")
+async def upload_file_to_session(
+    sessionId: str,
+    file: UploadFile = File(...),
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+    Uploads a PDF, Docx, or Image, analyzes it, and stores it in the vector DB for context.
+    """
+    # Vérification Session (Sécurité)
+    cursor = await db.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (sessionId,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Lecture du fichier en mémoire (Attention aux gros fichiers, limite recommandée côté Nginx/FastAPI)
+    file_bytes = await file.read()
+    
+    try:
+        # Traitement
+        # Note: Dans un vrai système prod, on mettrait ça dans une BackgroundTask Celery
+        # pour ne pas bloquer, mais ici on attend pour confirmer le succès.
+        chunk_count = await ingestion_service.process_file(
+            session_id=sessionId,
+            filename=file.filename,
+            file_bytes=file_bytes,
+            file_type=file.content_type,
+            db=db
+        )
+        
+        # Ajout d'un message système dans le chat pour dire que le fichier est prêt
+        await db.execute(
+            "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'system', %s)",
+            (sessionId, f"File '{file.filename}' processed and added to context ({chunk_count} segments).")
+        )
+        
+        return {"status": "success", "chunks_added": chunk_count, "filename": file.filename}
+        
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")

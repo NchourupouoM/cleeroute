@@ -14,7 +14,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.cleeroute.langGraph.learners_api.course_gen.state import PydanticSerializer
 
-from src.cleeroute.langGraph.learners_api.quiz.user_service import build_personalization_block
+from src.cleeroute.langGraph.learners_api.quiz.services.user_service import build_personalization_block
 from src.cleeroute.langGraph.learners_api.quiz.models import UserProfile
 
 
