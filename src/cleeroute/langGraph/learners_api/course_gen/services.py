@@ -2,7 +2,7 @@ import os
 import json
 import asyncio
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict
 from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 
@@ -346,7 +346,7 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
             title=snippet.get("title", "No Title"),
             description=snippet.get("description"),
             video_url=f"https://www.youtube.com/watch?v={video_id}",
-            channel_title=snippet.get("channelTitle"),
+            channel_title=snippet.get("channelTitle", "Unknown Channel"),
             thumbnail_url=thumbnail_url
         )
         
@@ -355,4 +355,118 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
         return None
     except Exception as e:
         print(f"--- Unexpected Error analyzing video {video_id}: {e} ---")
+        return None
+    
+
+
+
+# =============== services optimise
+# ==============================================================================
+# FAST ALGORITHMIC FILTER (0.001s vs 3s LLM)
+# ==============================================================================
+
+def heuristic_relevance_score(snippet: Dict, user_input: str) -> float:
+    score = 0.0
+    title = snippet.get("title", "").lower()
+    desc = snippet.get("description", "").lower()
+    keywords = user_input.lower().split()
+
+    matches = sum(1 for w in keywords if w in title)
+    score += matches * 10
+
+    good_terms = ["course", "tutorial", "full", "complete", "bootcamp", "series", "playlist"]
+    if any(t in title for t in good_terms):
+        score += 15
+
+    bad_terms = ["short", "funny", "reaction", "gameplay", "trailer"]
+    if any(t in title for t in bad_terms):
+        score -= 50
+
+    return score
+
+
+async def fast_search_youtube(user_input: str, language: str) -> List[str]:
+    """
+    Returns the top 3 most relevant YouTube playlists for the user's query.
+    Optimized for speed: reduces API calls and uses a lightweight scoring heuristic.
+    """
+    print(f"--- Fast Search: '{user_input}' [{language}] ---")
+    try:
+        def search_sync():
+            service = get_youtube_service()
+            search_term = f"{user_input} course tutorial"
+            req = service.search().list(
+                q=search_term,
+                part="snippet",
+                type="playlist",
+                maxResults=5,  # Reduced from 15 to 5
+                relevanceLanguage=language[:2] if len(language) >= 2 else "en"
+            )
+            return req.execute()
+
+        response = await asyncio.to_thread(search_sync)
+        candidates = []
+        for item in response.get("items", []):
+            snippet = item["snippet"]
+            pid = item["id"]["playlistId"]
+            score = heuristic_relevance_score(snippet, user_input)
+            candidates.append((pid, score))
+
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        return [c[0] for c in candidates[:3]]  # Return top 3 instead of 5
+
+    except Exception as e:
+        print(f"--- Search Error: {e} ---")
+        return []
+
+
+async def fetch_playlist_light(playlist_input: str, limit: int = 20) -> Optional[AnalyzedPlaylist]:
+    """
+    Fetches a YouTube playlist with a reduced video limit (default: 20).
+    Optimized for speed: minimizes API calls and data processing.
+    """
+    playlist_id = playlist_input.split("list=")[1].split("&")[0] if "list=" in playlist_input else playlist_input
+
+    try:
+        def fetch_sync():
+            service = get_youtube_service()
+            # Fetch playlist metadata
+            pl_resp = service.playlists().list(part="snippet", id=playlist_id).execute()
+            if not pl_resp.get("items"):
+                return None
+            pl_info = pl_resp['items'][0]['snippet']
+
+            # Fetch playlist items (videos)
+            vid_req = service.playlistItems().list(
+                part="snippet",
+                playlistId=playlist_id,
+                maxResults=limit  # Default: 20 videos
+            )
+            vid_resp = vid_req.execute()
+
+            videos = []
+            for item in vid_resp.get("items", []):
+                snippet = item.get("snippet", {})
+                vid_id = snippet.get("resourceId", {}).get("videoId")
+                if not vid_id:
+                    continue
+
+                videos.append(VideoInfo(
+                    title=snippet.get("title", ""),
+                    description=snippet.get("description", "")[:150],  # Truncate description
+                    video_url=f"https://www.youtube.com/watch?v={vid_id}",
+                    thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
+                    channel_title=snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or pl_info.get('channelTitle')
+                ))
+
+            return AnalyzedPlaylist(
+                playlist_title=pl_info['title'],
+                playlist_url=f"https://www.youtube.com/playlist?list={playlist_id}",
+                videos=videos
+            )
+
+        return await asyncio.to_thread(fetch_sync)
+
+    except Exception as e:
+        print(f"--- Error fetching playlist {playlist_id}: {e} ---")
         return None

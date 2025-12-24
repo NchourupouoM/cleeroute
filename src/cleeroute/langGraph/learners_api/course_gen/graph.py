@@ -1,7 +1,7 @@
 # In graph.py
 
 import os
-from typing import List, Literal, Dict
+from typing import List, Literal, Dict, Optional
 import json
 from langchain_core.messages import HumanMessage, AIMessage
 from pydantic import BaseModel
@@ -23,7 +23,7 @@ load_dotenv()
 
 def get_llm():
     return ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_2", "gemini-2.5-flash"), 
+        model=os.getenv("MODEL_2", "gemini-flash-lite-latest"), 
         google_api_key=os.getenv("GEMINI_API_KEY"),
         max_tokens=8192,
         temperature=0.3
@@ -261,64 +261,6 @@ def should_continue_conversation(state: GraphState) -> Literal["continue_convers
         return "end_conversation"
     return "continue_conversation"
 
-# async def plan_syllabus(state: GraphState) -> dict:
-#     """
-#     Generates a syllabus blueprint by iterating through each playlist and
-#     calling the LLM once per playlist for maximum reliability.
-#     """
-#     print("--- Planning Syllabus Structure (Iterative Approach) ---")
-    
-#     merged_playlists_json_str = f"[{','.join(state.get('merged_resources_str', []))}]"
-#     if not merged_playlists_json_str or merged_playlists_json_str == "[]":
-#         return {"syllabus_blueprint_str": ""} # Cas où il n'y a aucune ressource
-
-#     # 1. Charger toutes les playlists
-#     playlists = PydanticSerializer.loads(merged_playlists_json_str, List[AnalyzedPlaylist])
-#     conversation_summary = "\n".join([f"- User: {h}\n- Assistant: {a}" for h, a in state.get('conversation_history', [])])
-
-#     retry_instruction = state.get("retry_instruction", "")
-    
-#     all_blueprints = []
-
-#     # 2. BOUCLER sur chaque playlist
-#     for i, playlist in enumerate(playlists):
-#         print(f"--- Generating blueprint for playlist {i+1}/{len(playlists)}: {playlist.playlist_title} ---")
-        
-#         # Prépare un résumé des vidéos pour cette playlist uniquement
-#         playlist_videos_summary = ""
-#         for video in playlist.videos:
-#             playlist_videos_summary += f'- "{video.title}"\n'
-            
-#         # Logique de nouvelle tentative (inchangée)
-#         retry_instruction = state.get("retry_instruction", "")
-
-#         # 3. Appeler le LLM pour CETTE playlist
-#         prompt = Prompts.PLAN_SYLLABUS_WITH_PLACEHOLDERS.format(
-#             conversation_summary=conversation_summary,
-#             playlist_title=playlist.playlist_title,
-#             playlist_videos_summary=playlist_videos_summary,
-#             retry_instruction=retry_instruction
-#         )
-        
-#         try:
-#             response = await llm.ainvoke(prompt)
-#             single_blueprint = response.content
-            
-#             # Validation simple : on s'assure que le LLM n'a pas retourné une sortie vide
-#             if single_blueprint and "--- COURSE START ---" in single_blueprint:
-#                 all_blueprints.append(single_blueprint)
-#             else:
-#                 print(f"--- WARNING: LLM returned an empty or invalid blueprint for playlist: {playlist.playlist_title} ---")
-
-#         except Exception as e:
-#             print(f"--- ERROR generating blueprint for playlist {playlist.playlist_title}: {e} ---")
-#             continue # On passe à la playlist suivante en cas d'erreur
-
-#     # 4. Concaténer tous les blueprints générés
-#     final_blueprint_str = "\n\n".join(all_blueprints)
-    
-#     print(f"--- All blueprints generated. Total length: {len(final_blueprint_str)} chars. ---")
-#     return {"syllabus_blueprint_str": final_blueprint_str, "status": "syllabus_planned"}
 
 async def plan_syllabus(state: GraphState) -> dict:
     print("--- Planning Syllabus Structure (Parallel Approach) ---")
@@ -660,78 +602,358 @@ def create_conversation_graph(checkpointer=None):
 
 
 
-# --- GRAPHE 2: Graphe de Génération de Syllabus (Non-Interactif) ---
+# # --- GRAPHE 2: Graphe de Génération de Syllabus (Non-Interactif) ---
+# def create_syllabus_generation_graph(checkpointer=None):
+#     """
+#     Creates a non-interactive graph that takes a finished conversation state
+#     and generates the final syllabus.
+#     """
+#     if checkpointer is None:
+#         checkpointer = get_checkpointer()
+    
+#     workflow = StateGraph(GraphState)
+
+#     # --- Nœuds ---
+#     def start_generation(state):
+#         print("--- Starting Syllabus Generation Graph ---")
+#         # **Ajouter un log pour vérifier l'état entrant**
+#         print(f"--- DEBUG: start_generation node---")
+#         return {"status": "started"}  # Toujours un dict, même vide
+    
+#     workflow.add_node("start_generation", start_generation)
+
+#     # nœuds
+#     # workflow.add_node("fetch_learner_playlist", fetch_learner_playlist)
+#     workflow.add_node("process_user_links", process_user_links_node)
+
+#     workflow.add_node("generate_strategy", generate_search_strategy)
+#     workflow.add_node("search_resources", search_resources)
+#     workflow.add_node("merge_resources", merge_resources)
+
+#     workflow.add_node("plan_syllabus", plan_syllabus)
+#     workflow.add_node("find_and_search_project_videos", find_and_search_project_videos)
+#     workflow.add_node("finalize_syllabus_json", finalize_syllabus_json)
+
+#     # workflow.add_node("summarize_blueprint_descriptions", summarize_blueprint_descriptions_node)
+#     workflow.add_node("validate_blueprint", validate_blueprint_node)
+    
+#     # --- Arêtes ---
+#     workflow.set_entry_point("start_generation")
+
+#     # Après le démarrage, on route la collecte de données
+#     workflow.add_conditional_edges(
+#         "start_generation", # Le point de départ de la décision
+#         route_data_collection, # La fonction qui prend la décision
+#         {
+#             "process_user_links": "process_user_links",
+#             "search_new_playlists": "generate_strategy"
+#         }
+#     )
+
+#     workflow.add_edge("process_user_links", "plan_syllabus")
+    
+#     workflow.add_edge("generate_strategy", "search_resources")
+#     # workflow.add_edge("fetch_learner_playlist", "merge_resources")
+#     workflow.add_edge("search_resources", "merge_resources")
+
+#     # workflow.add_edge("merge_resources", "synthesize_paths")
+#     # workflow.add_edge("synthesize_paths", END)
+    
+#     workflow.add_edge("merge_resources", "plan_syllabus")
+#     # workflow.add_edge("plan_syllabus", "summarize_blueprint_descriptions")
+#     workflow.add_edge("plan_syllabus", "validate_blueprint")
+
+#     # strategie de retry apres echec de construction du syllabus 
+#     workflow.add_conditional_edges(
+#         "validate_blueprint",
+#         route_after_validation,
+#         {
+#             "retry_planning": "plan_syllabus", # La boucle de réparation
+#             "proceed_to_projects": "find_and_search_project_videos"
+#         }
+#     )
+
+#     workflow.add_edge("find_and_search_project_videos", "finalize_syllabus_json")
+#     workflow.add_edge("finalize_syllabus_json", END)
+
+#     return workflow.compile(checkpointer=checkpointer)
+
+
+# ===================== optimize graph 
+
+from .services import fast_search_youtube, fetch_playlist_light, classify_youtube_url, analyze_single_video
+from .models import SyllabusOptions, CompleteCourse, AnalyzedPlaylist, VideoInfo, Section, Subsection
+import math
+
+def heuristic_relevance_score(snippet: Dict, user_input: str) -> float:
+    score = 0.0
+    title = snippet.get("title", "").lower()
+    desc = snippet.get("description", "").lower()
+    keywords = user_input.lower().split()
+
+    matches = sum(1 for w in keywords if w in title)
+    score += matches * 10
+
+    good_terms = ["course", "tutorial", "full", "complete", "bootcamp", "series", "playlist"]
+    if any(t in title for t in good_terms):
+        score += 15
+
+    bad_terms = ["short", "funny", "reaction", "gameplay", "trailer"]
+    if any(t in title for t in bad_terms):
+        score -= 50
+
+    return score
+
+
+def parse_blueprint_to_course(blueprint_str: str, video_map: dict) -> Optional[CompleteCourse]:
+    """
+    Parses the LLM-generated blueprint into a structured course.
+    Optimized for speed: uses efficient regex and minimizes loops.
+    """
+    try:
+        # Extract metadata
+        title_match = re.search(r"Course Title: (.+)", blueprint_str)
+        intro_match = re.search(r"Course Introduction: (.+)", blueprint_str)
+        tag_match = re.search(r"Course Tag: (.+)", blueprint_str)
+
+        # Validate tag
+        raw_tag = tag_match.group(1).strip().lower() if tag_match else "best-of-both"
+        valid_tags = {"theory-focused", "practice-focused", "best-of-both", "tooling-focused"}
+        final_tag = raw_tag if raw_tag in valid_tags else "best-of-both"
+
+        # Extract sections
+        sections = []
+        section_blocks = re.split(r"--- SECTION START ---", blueprint_str)
+
+        for block in section_blocks:
+            if not block.strip():
+                continue
+
+            sec_title_match = re.search(r"Section Title: (.+)", block)
+            sec_desc_match = re.search(r"Section Description: (.+)", block)
+            if not sec_title_match:
+                continue
+
+            # Extract subsection titles
+            subsection_titles = re.findall(r"- Subsection Title: (.+)", block)
+            subsections = []
+
+            for sub_title in subsection_titles:
+                sub_title_clean = sub_title.strip()
+                video_data = video_map.get(sub_title_clean)
+
+                # Fuzzy match if exact title not found
+                if not video_data:
+                    for original_title, v_obj in video_map.items():
+                        if sub_title_clean.lower() in original_title.lower():
+                            video_data = v_obj
+                            break
+
+                if video_data:
+                    subsections.append(Subsection(
+                        title=sub_title_clean,
+                        description=video_data.description[:200] or "No description available",
+                        video_url=video_data.video_url,
+                        thumbnail_url=video_data.thumbnail_url,
+                        channel_title=video_data.channel_title
+                    ))
+
+            if subsections:
+                sections.append(Section(
+                    title=sec_title_match.group(1).strip(),
+                    description=sec_desc_match.group(1).strip() if sec_desc_match else "",
+                    subsections=subsections
+                ))
+
+        if not sections:
+            return None
+
+        return CompleteCourse(
+            title=title_match.group(1).strip() if title_match else "Generated Course",
+            introduction=intro_match.group(1).strip() if intro_match else "Welcome to this course.",
+            tag=final_tag,
+            sections=sections
+        )
+
+    except Exception as e:
+        print(f"--- Parsing Error: {e} ---")
+        return None
+
+
+# --- Génération du Syllabus optimisée ---
+async def fast_syllabus_generation(state: GraphState) -> dict:
+    """
+    Generates syllabi for all playlists in parallel.
+    Optimized for speed: parallel processing and minimal fallback logic.
+    """
+    print("--- NODE: Fast Syllabus Generation (Parallel) ---")
+    merged_str = state.get('merged_resources_str', [])
+    if not merged_str:
+        return {"final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[])), "status": "generation_failed_empty"}
+
+    playlists = [PydanticSerializer.loads(s, AnalyzedPlaylist) for s in merged_str]
+    lang = state.get('language', 'English')
+    llm = get_llm()
+
+    async def process_playlist(pl: AnalyzedPlaylist):
+        if not pl.videos:
+            return None
+        video_map = {v.title.strip(): v for v in pl.videos}
+        video_list_txt = "\n".join(f"- {v.title}" for v in pl.videos)
+
+        prompt = Prompts.DIRECT_SYLLABUS_GENERATION.format(
+            user_input=state['user_input_text'],
+            language=lang,
+            playlist_title=pl.playlist_title,
+            playlist_videos_summary=video_list_txt
+        )
+
+        try:
+            response = await llm.ainvoke(prompt)
+            course = parse_blueprint_to_course(response.content, video_map)
+            return course or create_fallback_course(pl, lang)
+        except Exception as e:
+            print(f"--- LLM Error for {pl.playlist_title}: {e} ---")
+            return create_fallback_course(pl, lang)
+
+    # Process playlists in parallel
+    tasks = [process_playlist(pl) for pl in playlists]
+    results = await asyncio.gather(*tasks)
+    valid_courses = [c for c in results if c is not None]
+
+    return {
+        "final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=valid_courses)),
+        "status": "completed"
+    }
+
+
+def create_fallback_course(playlist: AnalyzedPlaylist, language: str) -> CompleteCourse:
+    """
+    Generates a fallback course structure if LLM parsing fails.
+    Optimized for speed: minimal logic and no complex calculations.
+    """
+    print(f"--- Fallback for playlist: {playlist.playlist_title} ---")
+    videos = playlist.videos
+    sections = []
+    for i in range(0, len(videos), 5):
+        chunk = videos[i:i + 5]
+        sections.append(Section(
+            title=f"Module {i // 5 + 1}",
+            description=f"Videos {i+1}-{min(i+5, len(videos))}",
+            subsections=[
+                Subsection(
+                    title=vid.title,
+                    description=vid.description[:200] or "No description available",
+                    video_url=vid.video_url,
+                    thumbnail_url=vid.thumbnail_url,
+                    channel_title=vid.channel_title
+                )
+                for vid in chunk
+            ]
+        ))
+    return CompleteCourse(
+        title=playlist.playlist_title,
+        introduction=f"Fallback course for '{playlist.playlist_title}'.",
+        tag="best-of-both",
+        sections=sections
+    )
+
+
+async def fast_data_collection(state: GraphState) -> dict:
+    print("--- NODE: Fast Data Collection (Optimized) ---")
+    user_links = state.get('user_input_links', [])
+    user_text = state.get('user_input_text', "")
+    lang = state.get('language', 'English')
+
+    # Récupération de l'historique de conversation
+    history = state.get('conversation_history', [])
+
+    print("--- history:", history)
+
+    playlists = []
+
+    if user_links:
+        print("--- Mode: Direct Link (Optimized) ---")
+        tasks = []
+        for link in user_links:
+            l_type = classify_youtube_url(link)
+            if l_type == 'playlist':
+                tasks.append(fetch_playlist_light(link, limit=20))  # Reduced limit
+            elif l_type == 'video':
+                tasks.append(analyze_single_video(link))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        valid_pl = [r for r in results if isinstance(r, AnalyzedPlaylist)]
+        single_vids = [r for r in results if isinstance(r, VideoInfo)]
+
+        playlists.extend(valid_pl)
+        if single_vids:
+            playlists.append(AnalyzedPlaylist(
+                playlist_title="Custom Selection",
+                playlist_url="https://youtube.com/custom_selection",
+                videos=single_vids
+            ))
+
+    else:
+        # 1. RAFFINEMENT DE LA REQUÊTE (Context Aware)
+        search_query = user_text 
+
+        if history:
+            print("--- Refining search query based on conversation... ---")
+            try:
+                # On formate l'historique en texte
+                conversation_summary = "\n".join([f"User: {h}\nAI: {a}" for h, a in history])
+                
+                prompt = Prompts.GENERATE_OPTIMIZED_QUERY.format(
+                    user_input=user_text,
+                    conversation_summary=conversation_summary,
+                    language=lang
+                )
+                
+                llm = get_llm()
+                # Appel rapide (Gemini Flash est très rapide pour ça)
+                response = await llm.ainvoke(prompt)
+                refined_query = response.content.strip().replace('"', '')
+                
+                if refined_query:
+                    print(f"--- Optimized Query: '{refined_query}' ---")
+                    search_query = refined_query
+            except Exception as e:
+                print(f"--- Query Refinement Failed ({e}). Using original input. ---")
+
+        # 2. RECHERCHE YOUTUBE (Avec la requête optimisée)
+        # On passe la 'search_query' optimisée au lieu de 'user_text' brut
+        ids = await fast_search_youtube(search_query, lang)
+
+        if ids:
+            # On récupère jusqu'à 3 playlists pour la diversité
+            fetch_tasks = [fetch_playlist_light(pid, limit=30) for pid in ids[:3]]
+            fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+            
+            for res in fetch_results:
+                if isinstance(res, AnalyzedPlaylist) and res.videos:
+                    playlists.append(res)
+
+    print(f"--- Data Collection: {len(playlists)} playlists found. ---")
+    
+    serialized = [PydanticSerializer.dumps(p) for p in playlists]
+    return {"merged_resources_str": serialized, "status": "resources_merged"}
+
+
+# --------------------------
+# DÉFINITION DU GRAPHE RAPIDE
+# --------------------------
 def create_syllabus_generation_graph(checkpointer=None):
-    """
-    Creates a non-interactive graph that takes a finished conversation state
-    and generates the final syllabus.
-    """
     if checkpointer is None:
         checkpointer = get_checkpointer()
     
     workflow = StateGraph(GraphState)
 
-    # --- Nœuds ---
-    def start_generation(state):
-        print("--- Starting Syllabus Generation Graph ---")
-        # **Ajouter un log pour vérifier l'état entrant**
-        print(f"--- DEBUG: start_generation node---")
-        return {"status": "started"}  # Toujours un dict, même vide
-    
-    workflow.add_node("start_generation", start_generation)
+    workflow.add_node("fast_data_collection", fast_data_collection)
+    workflow.add_node("fast_syllabus_generation", fast_syllabus_generation)
 
-    # nœuds
-    # workflow.add_node("fetch_learner_playlist", fetch_learner_playlist)
-    workflow.add_node("process_user_links", process_user_links_node)
-
-    workflow.add_node("generate_strategy", generate_search_strategy)
-    workflow.add_node("search_resources", search_resources)
-    workflow.add_node("merge_resources", merge_resources)
-
-    workflow.add_node("plan_syllabus", plan_syllabus)
-    workflow.add_node("find_and_search_project_videos", find_and_search_project_videos)
-    workflow.add_node("finalize_syllabus_json", finalize_syllabus_json)
-
-    # workflow.add_node("summarize_blueprint_descriptions", summarize_blueprint_descriptions_node)
-    workflow.add_node("validate_blueprint", validate_blueprint_node)
-    
-    # --- Arêtes ---
-    workflow.set_entry_point("start_generation")
-
-    # Après le démarrage, on route la collecte de données
-    workflow.add_conditional_edges(
-        "start_generation", # Le point de départ de la décision
-        route_data_collection, # La fonction qui prend la décision
-        {
-            "process_user_links": "process_user_links",
-            "search_new_playlists": "generate_strategy"
-        }
-    )
-
-    workflow.add_edge("process_user_links", "plan_syllabus")
-    
-    workflow.add_edge("generate_strategy", "search_resources")
-    # workflow.add_edge("fetch_learner_playlist", "merge_resources")
-    workflow.add_edge("search_resources", "merge_resources")
-
-    # workflow.add_edge("merge_resources", "synthesize_paths")
-    # workflow.add_edge("synthesize_paths", END)
-    
-    workflow.add_edge("merge_resources", "plan_syllabus")
-    # workflow.add_edge("plan_syllabus", "summarize_blueprint_descriptions")
-    workflow.add_edge("plan_syllabus", "validate_blueprint")
-
-    # strategie de retry apres echec de construction du syllabus 
-    workflow.add_conditional_edges(
-        "validate_blueprint",
-        route_after_validation,
-        {
-            "retry_planning": "plan_syllabus", # La boucle de réparation
-            "proceed_to_projects": "find_and_search_project_videos"
-        }
-    )
-
-    workflow.add_edge("find_and_search_project_videos", "finalize_syllabus_json")
-    workflow.add_edge("finalize_syllabus_json", END)
+    workflow.set_entry_point("fast_data_collection")
+    workflow.add_edge("fast_data_collection", "fast_syllabus_generation")
+    workflow.add_edge("fast_syllabus_generation", END)
 
     return workflow.compile(checkpointer=checkpointer)

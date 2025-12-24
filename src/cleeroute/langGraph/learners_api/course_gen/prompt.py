@@ -185,3 +185,57 @@ class Prompts:
       "selected_ids": ["PL_...", "PL_...", "PL_..."]
     }}
     """
+
+    GENERATE_OPTIMIZED_QUERY = """
+    **Task:** Generate ONE optimized YouTube search query based on the user's goal and the conversation history in {language}.
+    
+    **Context:**
+    - Initial Goal: "{user_input}"
+    - Conversation:
+    {conversation_summary}
+    - Target Language: {language}
+
+    **Rules:**
+    1. Output **ONLY** the search query string. No quotes, no explanations in {language}.
+    2. Incorporate specific constraints from the conversation (e.g., "Beginner", "Advanced", "Project-based", "React Hooks").
+    3. Keep it under 10 words.
+    4. Append terms like "full course" or "tutorial" if appropriate.
+    
+    **Example:**
+    Input: User wants Python. Chat reveals they are advanced and want data science.
+    Output: Advanced Python Data Science full course
+    """
+
+    DIRECT_SYLLABUS_GENERATION = """
+    **Role:** You are Blueprint-Bot, a curriculum architect. Your task is to generate a **structured syllabus** from a YouTube playlist.
+
+    **Strict Format Rules:**
+    - Use **exactly** the format below.
+    - **Section Titles** and **Subsection Titles** must match the video titles **verbatim**.
+    - **Descriptions** must be **1 sentence max**.
+
+    **Input:**
+    - Learner's Goal: "{user_input}"
+    - Playlist Title: "{playlist_title}"
+    - Videos:
+    {playlist_videos_summary}
+
+    **Output Format:**
+    --- COURSE START ---
+    Course Title: [Clear, engaging title based on {playlist_title}]
+    Course Introduction: [2 sentences max summarizing the course goal and content]
+    Course Tag: [Choose ONE: "theory-focused", "practice-focused", "best-of-both", "tooling-focused"]
+
+    --- SECTION START ---
+    Section Title: [Logical group title for 3-5 videos]
+    Section Description: [1 sentence summarizing the section's objective]
+    Subsections:
+    - Subsection Title: [Exact video title 1]
+    - Subsection Title: [Exact video title 2]
+
+    --- SECTION START ---
+    ... (repeat for all videos)
+
+    --- COURSE END ---
+    """
+
