@@ -276,6 +276,17 @@ class ChatAskRequest(BaseModel):
                 }
             ]
         }
+# suppression d'une session de chat et mise à jour du titre 
+class RenameSessionRequest(BaseModel):
+    """Payload pour modifier le titre d'une session."""
+    newTitle: str = Field(..., min_length=1, max_length=255, description="Le nouveau titre de la conversation.")
+
+class SessionActionResponse(BaseModel):
+    """Réponse générique pour les actions de suppression/modification."""
+    status: str
+    sessionId: str
+    message: str
+
 
 
 # user profile 

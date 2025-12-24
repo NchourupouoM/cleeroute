@@ -785,6 +785,105 @@ async def ask_in_session(
     return MessageResponse(sender="ai", content=answer_text, createdAt=datetime.now())
 
 
+# ... imports ...
+from .models import RenameSessionRequest, SessionActionResponse
+
+# ==============================================================================
+# GESTION DES SESSIONS : SUPPRESSION ET RENOMMAGE
+# ==============================================================================
+
+# Delete a chat session
+@global_chat_router.delete("/sessions/{sessionId}", response_model=SessionActionResponse, summary="Delete a Chat Session")
+async def delete_chat_session(
+    sessionId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+    **Deletes a specific chat session and all its messages.**
+
+    This action is irreversible. Thanks to the database schema (ON DELETE CASCADE),
+    all associated messages and file references (RAG) will be automatically cleaned up.
+
+    Args:
+        sessionId (str): The UUID of the session to delete.
+    """
+    try:
+        # On utilise RETURNING pour vérifier si la ligne existait vraiment
+        cursor = await db.execute(
+            "DELETE FROM chat_sessions WHERE session_id = %s RETURNING session_id",
+            (sessionId,)
+        )
+        deleted_row = await cursor.fetchone()
+
+        if not deleted_row:
+            raise HTTPException(status_code=404, detail="Session not found.")
+
+        return SessionActionResponse(
+            status="success",
+            sessionId=sessionId,
+            message="Session and related history deleted successfully."
+        )
+
+    except Exception as e:
+        print(f"Delete Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete session.")
+
+
+
+# renomme the chat session title
+@global_chat_router.patch("/sessions/{sessionId}/title", response_model=ChatSessionResponse, summary="Rename a Chat Session")
+async def rename_chat_session(
+    sessionId: str,
+    request: RenameSessionRequest,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+    **Updates the title of a specific chat session.**
+
+    Useful if the user wants to organize their chats or if the auto-generated title
+    was not accurate enough.
+
+    Args:
+        sessionId (str): The UUID of the session.
+        request (RenameSessionRequest): Contains the new title.
+    """
+    try:
+        # Mise à jour du titre et de la date de modification
+        cursor = await db.execute(
+            """
+            UPDATE chat_sessions 
+            SET title = %s, updated_at = CURRENT_TIMESTAMP 
+            WHERE session_id = %s 
+            RETURNING session_id, title, scope, updated_at
+            """,
+            (request.newTitle, sessionId)
+        )
+        updated_row = await cursor.fetchone()
+
+        if not updated_row:
+            raise HTTPException(status_code=404, detail="Session not found.")
+
+        # Mapping du résultat (Tuple vs Dict selon la config driver)
+        if isinstance(updated_row, tuple):
+            s_id, s_title, s_scope, s_updated = updated_row
+        else:
+            s_id = updated_row["session_id"]
+            s_title = updated_row["title"]
+            s_scope = updated_row["scope"]
+            s_updated = updated_row["updated_at"]
+
+        return ChatSessionResponse(
+            sessionId=str(s_id),
+            title=s_title,
+            scope=s_scope,
+            updatedAt=s_updated
+        )
+
+    except Exception as e:
+        print(f"Rename Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to rename session.")
+
+
 # cet endpoint permet d'uploader un fichier .pdf, .docs, image et l'ajoute au contexte du global chat.
 
 ingestion_service = FileIngestionService()
