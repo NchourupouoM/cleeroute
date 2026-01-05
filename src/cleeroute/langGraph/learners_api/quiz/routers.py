@@ -15,7 +15,7 @@ from .models import (
     StartQuizRequest, AnswerRequest, AskRequest,
     QuizAttemptResponse, ChatHistoryResponse, QuizzesForCourseResponse,
     QuizQuestion, ChatMessage, QuizContent,QuizStats,
-    SkipRequest, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, MessageResponse
+    SkipRequest, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, MessageResponse, EditMessageRequest, DeleteResponse, RenameSessionRequest, SessionActionResponse
 )
 from src.cleeroute.langGraph.learners_api.course_gen.models import CompleteCourse
 # from .util_qa import extract_context_from_course
@@ -35,7 +35,6 @@ from .prompts import GLOBAL_CHAT_PROMPT, GENERATE_SESSION_TITLE_PROMPT
 from src.cleeroute.langGraph.learners_api.quiz.services.user_service import get_user_profile
 from src.cleeroute.langGraph.learners_api.quiz.services.user_service import build_personalization_block
 
-
 from .course_context_for_global_chat import get_student_quiz_context, extract_context_from_course, fetch_course_hierarchy
 
 from src.cleeroute.langGraph.learners_api.quiz.services.ingestion_services import FileIngestionService
@@ -45,9 +44,7 @@ qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.ge
 
 quiz_router = APIRouter()
 
-# ==============================================================================
-# ENDPOINT 1: Démarrer une Nouvelle Tentative de Quiz
-# ==============================================================================
+# create a quiz attempt
 @quiz_router.post("/quiz-attempts", response_model=QuizAttemptResponse, status_code=201, summary="Initiate a New Quiz Session",responses={
         201: {"description": "Quiz successfully created and questions generated."},
         500: {"description": "Failed to generate questions via AI or save to database."}
@@ -79,7 +76,6 @@ async def start_quiz_attempt(
 
     profile = await get_user_profile(userId, db)
 
-    # --- ÉTAPE 1: Préparer l'état initial pour le graphe ---
     # Le graphe a besoin de toutes ces informations pour générer le contenu.
     context_data = {
         "scope": request.scope, "courseId": request.courseId, "sectionId": request.sectionId,
@@ -150,7 +146,7 @@ async def start_quiz_attempt(
         404: {"description": "Quiz session not found (invalid attemptId)."},
         500: {"description": "Internal processing error."}
     })
-async def submit_answer(
+async def submit_an_answer(
     attemptId: str,
     request: AnswerRequest,
     graph: Pregel = Depends(get_quiz_graph)
@@ -223,13 +219,13 @@ async def submit_answer(
 
     return ChatHistoryResponse(chatHistory=chat_history_list)
 
-
+# Get a hint for a question
 @quiz_router.get("/quiz-attempts/{attemptId}/questions/{questionId}/hint", response_model=ChatHistoryResponse,     summary="Request a Hint for a Question",responses={
         200: {"description": "Hint generated and added to chat."},
         404: {"description": "Quiz session or question not found."},
     }
 )
-async def get_hint(
+async def get_a_hint(
     attemptId: str, 
     questionId: str, 
     graph: Pregel = Depends(get_quiz_graph)
@@ -283,10 +279,9 @@ async def get_hint(
 
     return ChatHistoryResponse(chatHistory=chat_history_list)
 
-# ================================= skipping a question
-
+# Skip a question
 @quiz_router.post("/quiz-attempts/{attemptId}/skip", response_model=ChatHistoryResponse)
-async def skip_question(
+async def skip_a_question(
     attemptId: str,
     request: SkipRequest,
     graph: Pregel = Depends(get_quiz_graph)
@@ -314,16 +309,12 @@ async def skip_question(
         print(f"--- ERROR in SKIP: {e} ---")
         raise HTTPException(status_code=500, detail="Failed to skip question.")
 
-
-
-# ==============================================================================
-# ENDPOINT 4: Poser une Question de Suivi
-# ==============================================================================
+# ask a follow-up question
 @quiz_router.post("/quiz-attempts/{attemptId}/ask", response_model=ChatHistoryResponse, summary="Ask a Free-form Follow-up Question",responses={
         200: {"description": "AI response generated and added to chat."},
         404: {"description": "Quiz session not found."},
     })
-async def ask_follow_up(
+async def ask_follow_up_questions(
     attemptId: str, 
     request: AskRequest, 
     graph: Pregel = Depends(get_quiz_graph)
@@ -360,15 +351,13 @@ async def ask_follow_up(
 
     return ChatHistoryResponse(chatHistory=chat_history_list)
 
-# ==============================================================================
-# ENDPOINT 5: Obtenir le Résumé Final du Quiz
-# ==============================================================================
+# Get a summary of the quiz after an attempt
 @quiz_router.get("/quiz-attempts/{attemptId}/summary", response_model=ChatHistoryResponse, summary="Finish Quiz and Get Summary",responses={
         200: {"description": "Quiz completed, score calculated, and summary generated."},
         404: {"description": "Quiz session not found."},
         500: {"description": "Failed to update score in database."}
     })
-async def get_summary(
+async def get_quiz_summary(
     attemptId: str, 
     graph: Pregel = Depends(get_quiz_graph),
     db: AsyncConnection = Depends(get_app_db_connection)
@@ -448,15 +437,12 @@ async def get_summary(
     
     return ChatHistoryResponse(chatHistory=chat_history_list)
 
-
-# ==============================================================================
-# ENDPOINT 6: Obtenir la Liste des Quiz pour un Cours
-# ==============================================================================
+# Get all messages of a specifique course
 @quiz_router.get("/courses/{courseId}/quizzes", response_model=List[QuizzesForCourseResponse], summary="Get Quiz History for a Course",responses={
         200: {"description": "List of quizzes retrieved successfully."},
         500: {"description": "Database error."}
     })
-async def get_quizzes_for_course(
+async def get_all_quizzes_for_course(
     courseId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
@@ -523,9 +509,9 @@ async def get_quizzes_for_course(
 
 global_chat_router = APIRouter()
 
-# 1. CRÉER UNE SESSION (Avec Scope défini par l'utilisateur)
+# Create a new session for a course with a scope define by the user
 @global_chat_router.post("/courses/{courseId}/sessions", response_model=ChatSessionResponse)
-async def create_chat_session(
+async def create_global_chat_session(
     courseId: str,
     request: CreateSessionRequest,
     db: AsyncConnection = Depends(get_app_db_connection)
@@ -572,7 +558,7 @@ async def create_chat_session(
 
 # recuperer les sessions
 @global_chat_router.get("/courses/{courseId}/sessions", response_model=List[ChatSessionResponse])
-async def get_chat_sessions(
+async def get_all_chat_sessions_of_a_course(
     courseId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
@@ -602,9 +588,9 @@ async def get_chat_sessions(
         
     return sessions
 
-# Lister les messages d'une session
+# Get all messages of a specifique section
 @global_chat_router.get("/sessions/{sessionId}/messages", response_model=List[MessageResponse])
-async def get_session_messages(
+async def get_all_messages_of_a_session(
     sessionId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
@@ -620,7 +606,7 @@ async def get_session_messages(
             List[MessageResponse]: A chronological list of messages exchanged between 'user' and 'ai'.
     """
     cursor = await db.execute(
-        "SELECT sender, content, created_at FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
+        "SELECT id,sender, content, created_at FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
         (sessionId,)
     )
     records = await cursor.fetchall()
@@ -628,14 +614,14 @@ async def get_session_messages(
     msgs = []
     for r in records:
         val = r if isinstance(r, tuple) else (r['sender'], r['content'], r['created_at'])
-        msgs.append(MessageResponse(sender=val[0], content=val[1], createdAt=val[2]))
-        
+        msgs.append(MessageResponse(messageId=str(val[0]), sender=val[1], content=val[2], createdAt=val[3]))
+    
     return msgs
 
 
-# 4. POSER UNE QUESTION (Le Cœur du Système)
+# Chat for the entire course sessions.
 @global_chat_router.post("/sessions/{sessionId}/ask", response_model=MessageResponse)
-async def ask_in_session(
+async def ask_question_in_the_global_chat_for_a_session(
     sessionId: str,
     request: ChatAskRequest,
     userId: str = Header(..., alias="userId"),
@@ -785,16 +771,9 @@ async def ask_in_session(
     return MessageResponse(sender="ai", content=answer_text, createdAt=datetime.now())
 
 
-# ... imports ...
-from .models import RenameSessionRequest, SessionActionResponse
-
-# ==============================================================================
-# GESTION DES SESSIONS : SUPPRESSION ET RENOMMAGE
-# ==============================================================================
-
 # Delete a chat session
 @global_chat_router.delete("/sessions/{sessionId}", response_model=SessionActionResponse, summary="Delete a Chat Session")
-async def delete_chat_session(
+async def delete_a_chat_session(
     sessionId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
@@ -829,10 +808,169 @@ async def delete_chat_session(
         raise HTTPException(status_code=500, detail="Failed to delete session.")
 
 
+# Deleting all the chat sessions of a specifique course
+@global_chat_router.delete("/courses/{courseId}/sessions", response_model=DeleteResponse)
+async def delete_all_course_chat_sessions(
+    courseId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+    **Deletes ALL chat sessions associated with a specific course.**
+    
+    This is a destructive action used to "reset" the chat history for a course.
+    All messages and file references to the course are also removed.
+    """
+    try:
+        # On supprime toutes les sessions liées au cours
+        cursor = await db.execute(
+            """
+            WITH deleted_rows AS (
+                DELETE FROM chat_sessions 
+                WHERE course_id = %s 
+                RETURNING session_id
+            )
+            SELECT COUNT(*) FROM deleted_rows;
+            """,
+            (courseId,)
+        )
+
+        count_row = await cursor.fetchone()
+        count = count_row[0] if count_row else 0
+
+        return DeleteResponse(
+            status="success",
+            deletedCount=count,
+            message=f"Successfully deleted {count} sessions for course {courseId}."
+        )
+
+    except Exception as e:
+        print(f"Delete All Sessions Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete sessions.")
+
+#delete a message in an existing chat session.
+@global_chat_router.delete("/sessions/{sessionId}/messages/{messageId}", response_model=DeleteResponse)
+async def delete_a_message_in_a_session(
+    sessionId: str,
+    messageId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+    **Deletes a message and all subsequent messages in the thread.**
+    
+    This is equivalent to "Rewinding" the conversation to the point just before this message.
+    """
+    try:
+        # 1. Récupérer le timestamp
+        cursor = await db.execute(
+            "SELECT created_at FROM chat_messages WHERE id = %s AND session_id = %s",
+            (messageId, sessionId)
+        )
+        target_msg = await cursor.fetchone()
+        
+        if not target_msg:
+            raise HTTPException(status_code=404, detail="Message not found.")
+            
+        target_created_at = target_msg[0] if isinstance(target_msg, tuple) else target_msg['created_at']
+
+        # 2. Supprimer le message ET les suivants ( >= )
+        cursor = await db.execute(
+            """
+            WITH deleted AS (
+                DELETE FROM chat_messages 
+                WHERE session_id = %s AND created_at >= %s
+                RETURNING id
+            )
+            SELECT COUNT(*) FROM deleted;
+            """,
+            (sessionId, target_created_at)
+        )
+        
+        count_row = await cursor.fetchone()
+        count = count_row[0] if count_row else 0
+
+        return DeleteResponse(
+            status="success",
+            deletedCount=count,
+            message=f"Rewound conversation. Deleted {count} messages."
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Delete Message Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete message branch.")
+
+# Edit a specific message
+@global_chat_router.patch("/sessions/{sessionId}/messages/{messageId}", response_model=MessageResponse)
+async def edit_message_and_truncate(
+    sessionId: str,
+    messageId: str,
+    request: EditMessageRequest,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+    **Edits a specific message and deletes all subsequent messages.**
+    
+    This allows the user to "branch" the conversation. By changing a past question,
+    the old AI response and following conversation become invalid and are removed.
+    
+    The frontend should typically trigger a new `/ask` or `/stream` call immediately 
+    after this returns, to generate the new AI response.
+    """
+    try:
+        # 1. Récupérer le timestamp du message cible pour savoir où couper
+        cursor = await db.execute(
+            "SELECT created_at FROM chat_messages WHERE id = %s AND session_id = %s",
+            (messageId, sessionId)
+        )
+        target_msg = await cursor.fetchone()
+        
+        if not target_msg:
+            raise HTTPException(status_code=404, detail="Message not found in this session.")
+            
+        target_created_at = target_msg[0] if isinstance(target_msg, tuple) else target_msg['created_at']
+
+        # 2. Supprimer tous les messages SUIVANTS (créés strictement APRÈS)
+        await db.execute(
+            """
+            DELETE FROM chat_messages 
+            WHERE session_id = %s AND created_at > %s
+            """,
+            (sessionId, target_created_at)
+        )
+
+        # 3. Mettre à jour le contenu du message
+        cursor = await db.execute(
+            """
+            UPDATE chat_messages 
+            SET content = %s 
+            WHERE id = %s 
+            RETURNING id, sender, content, created_at
+            """,
+            (request.newContent, messageId)
+        )
+        updated_row = await cursor.fetchone()
+        
+        # Mapping retour
+        val = updated_row if isinstance(updated_row, tuple) else (updated_row['id'], updated_row['sender'], updated_row['content'], updated_row['created_at'])
+        
+        return MessageResponse(
+            messageId=str(val[0]),
+            sender=val[1],
+            content=val[2],
+            createdAt=val[3]
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Edit Message Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to edit message.")
+
 
 # renomme the chat session title
 @global_chat_router.patch("/sessions/{sessionId}/title", response_model=ChatSessionResponse, summary="Rename a Chat Session")
-async def rename_chat_session(
+async def rename_chat_session_title(
     sessionId: str,
     request: RenameSessionRequest,
     db: AsyncConnection = Depends(get_app_db_connection)
@@ -884,12 +1022,11 @@ async def rename_chat_session(
         raise HTTPException(status_code=500, detail="Failed to rename session.")
 
 
-# cet endpoint permet d'uploader un fichier .pdf, .docs, image et l'ajoute au contexte du global chat.
-
 ingestion_service = FileIngestionService()
 
+# Upload a files (PDF, Docx, Image) to a session and add it to the global context
 @global_chat_router.post("/sessions/{sessionId}/upload")
-async def upload_file_to_session(
+async def upload_file_to_session_chat(
     sessionId: str,
     file: UploadFile = File(...),
     db: AsyncConnection = Depends(get_app_db_connection)

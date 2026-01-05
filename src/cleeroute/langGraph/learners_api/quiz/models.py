@@ -220,7 +220,7 @@ class CreateSessionRequest(BaseModel):
             "examples": [
                 # CAS 1 : Discussion sur tout le cours
                 {
-                    "title": "Aide générale sur Python",
+                    "title": "General help on python programming",
                     "scope": "course",
                     "sectionIndex": None,
                     "subsectionIndex": None,
@@ -261,11 +261,12 @@ class ChatSessionResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     sender: Literal["user", "ai"]
+    messageId: str
     content: str
     createdAt: datetime
 
 class ChatAskRequest(BaseModel):
-    """Payload pour poser une question dans une session existante."""
+    """Payload for asking a question in an existing chat session."""
     userQuery: str
 
     class config:
@@ -276,17 +277,29 @@ class ChatAskRequest(BaseModel):
                 }
             ]
         }
+
 # suppression d'une session de chat et mise à jour du titre 
 class RenameSessionRequest(BaseModel):
-    """Payload pour modifier le titre d'une session."""
+    """Payload for renaming a chat session."""
     newTitle: str = Field(..., min_length=1, max_length=255, description="Le nouveau titre de la conversation.")
 
 class SessionActionResponse(BaseModel):
-    """Réponse générique pour les actions de suppression/modification."""
+    """The response after performing an action (rename or delete) on a chat session"""
     status: str
     sessionId: str
     message: str
 
+#Edite a specifique message in a chat session
+class EditMessageRequest(BaseModel):
+    """Payload for editing a specific message in a chat session."""
+    newContent: str = Field(..., min_length=1, description="The updated content of the message.")
+
+#Delete a specifique message in a chat session
+class DeleteResponse(BaseModel):
+    """The response after deleting a specific message in a chat session."""
+    status: str
+    deletedCount: int
+    message: str
 
 
 # user profile 
