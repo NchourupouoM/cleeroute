@@ -27,3 +27,5 @@ build/
 htmlcov/
 .tox/
 .nox/
+tests_and_eval/
+.venv
