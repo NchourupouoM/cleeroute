@@ -54,6 +54,7 @@ async def start_quiz_attempt(
     request: StartQuizRequest,
     graph: Pregel = Depends(get_quiz_graph),
     userId: str = Header(..., alias="userId"),
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -71,6 +72,8 @@ async def start_quiz_attempt(
         - The full list of generated questions (without answers).
         - An empty initial chat history.
     """
+    os.environ["GEMINI_API_KEY"] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
     attempt_id = f"attempt_{uuid.uuid4()}"
     config = {"configurable": {"thread_id": attempt_id}}
     courseId = request.courseId
@@ -160,6 +163,7 @@ async def start_quiz_attempt(
 async def submit_an_answer(
     attemptId: str,
     request: AnswerRequest,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     graph: Pregel = Depends(get_quiz_graph)
 ):
     
@@ -176,6 +180,7 @@ async def submit_an_answer(
         **Returns:**\\
         - The updated `chatHistory` containing the user's action and the AI's immediate feedback.
     """
+    os.environ["GEMINI_API_KEY"] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
 
     config = {"configurable": {"thread_id": attemptId}}
 
@@ -238,7 +243,8 @@ async def submit_an_answer(
 )
 async def get_a_hint(
     attemptId: str, 
-    questionId: str, 
+    questionId: str,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
@@ -254,6 +260,8 @@ async def get_a_hint(
         **Returns:**\\
         - The updated `chatHistory` including the newly generated hint.
     """
+    os.environ["GEMINI_API_KEY"] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
     config = {"configurable": {"thread_id": attemptId}}
     
     update_payload = {
@@ -295,12 +303,15 @@ async def get_a_hint(
 async def skip_a_question(
     attemptId: str,
     request: SkipRequest,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
     Allows the user to skip a question.
     This counts as a "skipped" answer and triggers AI feedback with the solution.
     """
+    os.environ["GEMINI_API_KEY"] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
     config = {"configurable": {"thread_id": attemptId}}
 
     update_payload = {
@@ -327,7 +338,8 @@ async def skip_a_question(
     })
 async def ask_follow_up_questions(
     attemptId: str, 
-    request: AskRequest, 
+    request: AskRequest,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     graph: Pregel = Depends(get_quiz_graph)
 ):
     """
@@ -343,6 +355,8 @@ async def ask_follow_up_questions(
         **Returns:**\\
         - The updated `chatHistory` with the user's query and the AI's response.
     """
+    os.environ["GEMINI_API_KEY"] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
     config = {"configurable": {"thread_id": attemptId}}
     
     update_payload = {
@@ -371,6 +385,7 @@ async def ask_follow_up_questions(
 async def get_quiz_summary(
     attemptId: str, 
     graph: Pregel = Depends(get_quiz_graph),
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -387,6 +402,8 @@ async def get_quiz_summary(
         **Returns:**\\
         - The final `chatHistory` containing the summary card data.
     """
+    os.environ["GEMINI_API_KEY"] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
+
     config = {"configurable": {"thread_id": attemptId}}
 
     # 1. On prépare le payload pour déclencher le routeur vers 'generate_summary'
@@ -525,6 +542,7 @@ global_chat_router = APIRouter()
 async def create_global_chat_session(
     courseId: str,
     request: CreateSessionRequest,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -542,6 +560,7 @@ async def create_global_chat_session(
         Returns:\\
             ChatSessionResponse: The metadata of the newly created session (ID, title, scope).
     """
+    os.environ['GEMINI_API_KEY'] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
 
     session_id = str(uuid.uuid4())
     try:
@@ -636,6 +655,7 @@ async def ask_question_in_the_global_chat_for_a_session(
     sessionId: str,
     request: ChatAskRequest,
     userId: str = Header(..., alias="userId"),
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-gemini-Api-Key"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -656,6 +676,7 @@ async def ask_question_in_the_global_chat_for_a_session(
         Returns:\\
             MessageResponse: The AI's response and the creation timestamp.
     """
+    os.environ['GEMINI_API_KEY'] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
     profile = await get_user_profile(userId, db)
     persona_block = build_personalization_block(profile)
 
@@ -917,6 +938,7 @@ async def edit_message_and_truncate(
     sessionId: str,
     messageId: str,
     request: EditMessageRequest,
+    x_gemini_api_key: Optional[str] = Header(None, alias="X-Gemini-Api-Key"),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
@@ -928,6 +950,7 @@ async def edit_message_and_truncate(
     The frontend should typically trigger a new `/ask` or `/stream` call immediately 
     after this returns, to generate the new AI response.
     """
+    os.environ['GEMINI_API_KEY'] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
     try:
         # 1. Récupérer le timestamp du message cible pour savoir où couper
         cursor = await db.execute(

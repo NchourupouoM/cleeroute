@@ -58,9 +58,9 @@ async def build_quiz_context_from_db(
             if not sec_row: raise ValueError("Section not found")
             
             s_title = sec_row[0] if isinstance(sec_row, tuple) else sec_row['title']
-            s_desc = sec_row[1] if isinstance(sec_row, tuple) else sec_row['description']
+            # s_desc = sec_row[1] if isinstance(sec_row, tuple) else sec_row['description']
             
-            context_text += f"MODULE: {s_title}\nOVERVIEW: {s_desc}\n\nTOPICS COVERED:\n"
+            context_text += f"MODULE: {s_title}"
             
             # 2. Contenu des sous-sections
             cursor = await db.execute(
@@ -92,20 +92,20 @@ async def build_quiz_context_from_db(
             
             # 2. Liste des Sections
             cursor = await db.execute(
-                "SELECT title, description FROM section WHERE course_id = %s ORDER BY position ASC",
+                "SELECT title FROM section WHERE course_id = %s ORDER BY position ASC",
                 (course_id,)
             )
             rows = await cursor.fetchall()
             for row in rows:
                 sec_title = row[0] if isinstance(row, tuple) else row['title']
-                sec_desc = row[1] if isinstance(row, tuple) else row['description']
-                context_text += f"- Module: {sec_title} ({sec_desc})\n"
+                # sec_desc = row[1] if isinstance(row, tuple) else row['description']
+                context_text += f"- Module: {sec_title}"
 
         if not context_text.strip():
             return "No content found for this context."
         
         # print(f"Built quiz context (scope={scope}): {context_text[:200]}...")
-            
+        print(f"Built quiz context (scope={scope}): {context_text}")
         return context_text
 
     except Exception as e:
