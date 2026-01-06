@@ -9,9 +9,7 @@ GENERATE_QUIZ_CONTENT_PROMPT = PromptTemplate.from_template(
 
 **Context for the Quiz:**
 - **Scope:** {scope}
-- **Course Title:** {course_title}
-- **Section Title (if applicable):** {section_title}
-- **Subsection Title (if applicable):** {subsection_title}
+- **User intend: {user_intent}
 - **Underlying Content Summary/Transcript:** 
 {content_summary}
 

@@ -38,6 +38,7 @@ from src.cleeroute.langGraph.learners_api.quiz.services.user_service import buil
 from .course_context_for_global_chat import get_student_quiz_context, extract_context_from_course, fetch_course_hierarchy
 
 from src.cleeroute.langGraph.learners_api.quiz.services.ingestion_services import FileIngestionService
+from src.cleeroute.langGraph.learners_api.quiz.services.quiz_context_extractor import build_quiz_context_from_db
 
 qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -76,10 +77,20 @@ async def start_quiz_attempt(
 
     profile = await get_user_profile(userId, db)
 
+    # RECUPERATION DU CONTEXTE DEPUIS LA BDD 
+    print(f"--- [API] Fetching context for scope '{request.scope}' ---")
+    
+    db_content = await build_quiz_context_from_db(
+        db=db,
+        scope=request.scope,
+        course_id=courseId,
+        section_id=request.sectionId,
+        subsection_id=request.subsectionId
+    )
+
     # Le graphe a besoin de toutes ces informations pour générer le contenu.
     context_data = {
-        "scope": request.scope, "courseId": request.courseId, "sectionId": request.sectionId,
-        "subsectionId": request.subsectionId, "videoId": request.videoId,
+        "db_context": db_content,
         "content_for_quiz": request.content_for_quiz
     }
     initial_state = {

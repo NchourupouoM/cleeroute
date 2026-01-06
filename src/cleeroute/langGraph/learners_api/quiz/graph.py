@@ -28,7 +28,7 @@ async def generate_questions_node(state: QuizGraphState) -> dict:
     print(f"--- [QUIZ GRAPH] NODE: Generating Title and Questions for attempt {state['attemptId']} ---")
     context = state['context']
     prefs = state['preferences']
-    content_summary = context.get('content_for_quiz')
+    content_summary = f"course_content: {context.get('db_context')}"
 
     profile_data = json.loads(state["user_profile"])
     profile = UserProfile(**profile_data)
@@ -44,9 +44,7 @@ async def generate_questions_node(state: QuizGraphState) -> dict:
         # Prépare le prompt
         prompt = GENERATE_QUIZ_CONTENT_PROMPT.format(
             scope=context.get('scope'),
-            course_title=context.get('threadId'),
-            section_title=context.get('sectionId'),
-            subsection_title=context.get('subsectionId'),
+            user_intent = context.get('content_for_quiz'),
             content_summary=content_summary,
             difficulty=prefs.get('difficulty', 'Intermediate'),
             question_count=prefs.get('questionCount', 5),
