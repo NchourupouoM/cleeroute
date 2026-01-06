@@ -6,9 +6,6 @@ from fastapi import HTTPException, Query, FastAPI, status, Header
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 from fastapi import APIRouter
-
-from langchain_groq import ChatGroq
-
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
