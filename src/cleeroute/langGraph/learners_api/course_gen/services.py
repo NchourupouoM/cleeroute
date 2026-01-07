@@ -420,7 +420,7 @@ async def fast_search_youtube(user_input: str, language: str) -> List[str]:
         return []
 
 
-async def fetch_playlist_light(playlist_input: str, limit: int = 20) -> Optional[AnalyzedPlaylist]:
+async def fetch_playlist_light(playlist_input: str, limit: int = 50) -> Optional[AnalyzedPlaylist]:
     """
     Fetches a YouTube playlist with a reduced video limit (default: 20).
     Optimized for speed: minimizes API calls and data processing.
@@ -440,7 +440,7 @@ async def fetch_playlist_light(playlist_input: str, limit: int = 20) -> Optional
             vid_req = service.playlistItems().list(
                 part="snippet",
                 playlistId=playlist_id,
-                maxResults=limit  # Default: 20 videos
+                maxResults=limit  # Default: 50 videos
             )
             vid_resp = vid_req.execute()
 

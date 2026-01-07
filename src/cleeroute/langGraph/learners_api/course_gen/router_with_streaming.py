@@ -49,7 +49,11 @@ async def stream_graph_execution(graph, input_state, config):
             content = chunk.content if hasattr(chunk, "content") else str(chunk)
             
             if content:
-                yield json.dumps({"event": "token", "data": content}) + "\n"
+                # 🔹 NETTOYAGE : ne jamais afficher le token de contrôle [CONVERSATION_FINISHED]
+                content = content.replace("[CONVERSATION_FINISHED]", "").strip()
+
+                if content:
+                    yield json.dumps({"event": "token", "data": content}) + "\n"
 
 
 @stream_syllabus_router.post("/stream_gen_syllabus", status_code=201)

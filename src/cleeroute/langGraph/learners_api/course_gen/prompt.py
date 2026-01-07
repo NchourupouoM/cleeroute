@@ -184,6 +184,16 @@ class Prompts:
         3. **Specific Focus** – Particular topics, constraints, or preferences.
 
         ---
+        ---
+        **USER OVERRIDE RULE (CRITICAL):**
+        If the user explicitly expresses refusal, fatigue, frustration, or asks to stop answering questions
+        (e.g. "c'est assez", "arrête", "je ne veux plus répondre", "fais avec ce que tu as"):
+
+        - IMMEDIATELY stop asking questions
+        - DO NOT request missing information
+        - ASSUME reasonable defaults based on available context
+        - TERMINATE the conversation using the exact [CONVERSATION_FINISHED] format
+
         **Conversation Rules:**
         1. **Analyze before speaking:**  
         Carefully read:
@@ -365,7 +375,7 @@ class Prompts:
         **Your Core Task:**
         - Build ONE complete, logically structured course blueprint.
         - Organize ALL playlist videos into coherent sections.
-        - Each section MUST contain **3 to 5 videos**.
+        - Each section MUST contain **3 to 4 videos**.
         - ALL videos must be used EXACTLY once.
         - Stopping early is a critical failure.
 
