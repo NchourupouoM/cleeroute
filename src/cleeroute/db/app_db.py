@@ -58,3 +58,10 @@ async def get_app_db_connection() -> AsyncGenerator[AsyncConnection, None]:
         
     async with app_db_pool.connection() as conn:
         yield conn
+
+
+def get_active_pool() -> AsyncConnectionPool:
+    """Retourne le pool actif. Lève une erreur s'il n'est pas initialisé."""
+    if app_db_pool is None:
+        raise RuntimeError("Database Pool is not initialized. Ensure the app has started.")
+    return app_db_pool

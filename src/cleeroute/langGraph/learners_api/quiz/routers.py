@@ -676,60 +676,57 @@ async def ask_question_in_the_global_chat_for_a_session(
         Returns:\\
             MessageResponse: The AI's response and the creation timestamp.
     """
-    os.environ['GEMINI_API_KEY'] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
-    profile = await get_user_profile(userId, db)
+    # Configuration API Key dynamique si fournie
+    if x_gemini_api_key:
+        os.environ['GEMINI_API_KEY'] = x_gemini_api_key
+        
+    # 1. Personnalisation
+    profile = await get_user_profile(db=db,user_id=userId)
     persona_block = build_personalization_block(profile)
 
-    # A. Récupérer les infos de la session (Scope & course_id)
+    # 2. Récupération Session & Check Historique
     cursor = await db.execute(
         "SELECT course_id, scope, section_index, subsection_index, video_id FROM chat_sessions WHERE session_id = %s",
         (sessionId,)
     )
-
-    # Récupérer l'historique des messages ( pour la mise a jour du titre de la session)
-    msgs_cursor = await db.execute(
-        "SELECT sender, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
-        (sessionId,)
-    )
-    history_rows = await msgs_cursor.fetchall()
-     # --- DETECTION DU PREMIER MESSAGE ---
-    # Si history_rows est vide, c'est que c'est la toute première interaction
-    is_first_interaction = (len(history_rows) == 0)
-    # Invocation du LLM pour la RÉPONSE 
-
     session_rec = await cursor.fetchone()
     if not session_rec:
         raise HTTPException(status_code=404, detail="Session not found")
         
-    # Mapping des données session
     if isinstance(session_rec, tuple):
         course_id, scope, sec_idx, sub_idx, vid_id = session_rec
     else:
-        course_id = session_rec["course_id"]
-        scope = session_rec["scope"]
-        sec_idx = session_rec["section_index"]
-        sub_idx = session_rec["subsection_index"]
-        vid_id = session_rec["video_id"]
+        course_id, scope, sec_idx, sub_idx, vid_id = session_rec["course_id"], session_rec["scope"], session_rec["section_index"], session_rec["subsection_index"], session_rec["video_id"]
 
-    # B. Récupérer le contenu du cours (JSON complet)
-    # Au lieu de SELECT course_data, on reconstruit l'objet
-    try:
-        course_obj = await fetch_course_hierarchy(db, str(course_id))
-    except Exception as e:
-        print(f"Error fetching course hierarchy: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve course structure")
-
-    # C. Le reste du code reste identique
-    context_text = extract_context_from_course(course_obj, scope, sec_idx, sub_idx, vid_id)
-    student_quiz_context = await get_student_quiz_context(db, str(course_id))
-
-    # D. Récupérer l'historique des messages pour LangChain
+    # Historique pour savoir si c'est la première interaction
     msgs_cursor = await db.execute(
         "SELECT sender, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
         (sessionId,)
     )
     history_rows = await msgs_cursor.fetchall()
-    
+    is_first_interaction = (len(history_rows) == 0)
+
+    # 3. Construction du Contexte (Cours + Quiz + Fichiers)
+    try:
+        course_obj = await fetch_course_hierarchy(db, str(course_id))
+    except Exception as e:
+        print(f"Error fetching course: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve course structure")
+
+    context_text = extract_context_from_course(course_obj, scope, sec_idx, sub_idx, vid_id)
+    student_quiz_context = await get_student_quiz_context(db, str(course_id))
+
+    # RAG (Fichiers Uploadés)
+    try:
+        uploaded_docs_context = await ingestion_service.retrieve_relevant_context(
+            session_id=sessionId,
+            db=db
+        )
+    except Exception as e:
+        print(f"RAG Error: {e}")
+        uploaded_docs_context = ""
+
+    # 4. Formatage Historique LangChain
     langchain_history = []
     for row in history_rows:
         sender, content = (row[0], row[1]) if isinstance(row, tuple) else (row['sender'], row['content'])
@@ -738,18 +735,7 @@ async def ask_question_in_the_global_chat_for_a_session(
         else:
             langchain_history.append(AIMessage(content=content))
 
-    # E. Récupérer le contexte RAG des documents uploadés
-    try:
-        uploaded_docs_context = await ingestion_service.retrieve_relevant_context(
-            session_id=sessionId,
-            db=db,
-        )
-    except Exception as e:
-        print(f"Context Retrieval Error: {e}")
-        uploaded_docs_context = ""
-    
-
-    # F. Invocation du LLM
+    # 5. Génération LLM
     chain = GLOBAL_CHAT_PROMPT | qa_llm
     
     try:
@@ -767,41 +753,52 @@ async def ask_question_in_the_global_chat_for_a_session(
         print(f"LLM Error: {e}")
         raise HTTPException(status_code=500, detail="AI generation failed")
 
-    # G. Sauvegarde des messages et mise à jour de la session
+    # 6. Sauvegarde & Renommage
+    ai_message_id = str(uuid.uuid4()) # ID par défaut de sécurité
+
     try:
-        await db.execute(
+        # Insertion avec RETURNING id pour récupérer l'ID généré
+        cursor = await db.execute(
             """
             INSERT INTO chat_messages (session_id, sender, content) 
             VALUES (%s, 'user', %s), (%s, 'ai', %s)
+            RETURNING id
             """,
             (sessionId, request.userQuery, sessionId, answer_text)
         )
+        
+        # On récupère les IDs. Le 2ème est celui de l'IA (ordre d'insertion)
+        inserted_ids = await cursor.fetchall()
+        if inserted_ids and len(inserted_ids) >= 2:
+            ai_message_id = str(inserted_ids[1][0])
 
+        # Auto-Titling (Si première question)
         if is_first_interaction:
-            print(f"--- First interaction detected for session {sessionId}. Generating title... ---")
             try:
-                # Appel LLM léger pour le titre
                 title_chain = GENERATE_SESSION_TITLE_PROMPT | qa_llm
                 title_response = await title_chain.ainvoke({"user_query": request.userQuery})
-                new_title = title_response.content.strip().replace('"', '') # Nettoyage basique
+                new_title = title_response.content.strip().replace('"', '')
                 
-                # Mise à jour du titre en BDD
                 await db.execute(
                     "UPDATE chat_sessions SET title = %s, updated_at = CURRENT_TIMESTAMP WHERE session_id = %s",
                     (new_title, sessionId)
                 )
             except Exception as e:
-                print(f"--- WARNING: Failed to auto-generate title: {e} ---")
-                # En cas d'erreur de titre, on met juste à jour la date
+                print(f"Title Gen Warning: {e}")
+                # Fallback update date
                 await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
         else:
-            # Ce n'est pas le premier message, on met juste à jour la date
             await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
+
     except Exception as e:
         print(f"DB Save Error: {e}")
-
-    return MessageResponse(sender="ai", content=answer_text, createdAt=datetime.now())
-
+        
+    return MessageResponse(
+        messageId=ai_message_id, # Champ corrigé
+        sender="ai", 
+        content=answer_text, 
+        createdAt=datetime.now()
+    )
 
 # Delete a chat session
 @global_chat_router.delete("/sessions/{sessionId}", response_model=SessionActionResponse, summary="Delete a Chat Session")

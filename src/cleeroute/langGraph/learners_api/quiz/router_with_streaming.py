@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, Header
 from langgraph.pregel import Pregel
 from langchain_core.messages import HumanMessage, AIMessage
 from psycopg.connection_async import AsyncConnection
+from psycopg_pool import AsyncConnectionPool
 from datetime import datetime
 
 import json
@@ -26,7 +27,8 @@ from src.cleeroute.langGraph.learners_api.course_gen.models import CompleteCours
 from .graph import get_quiz_graph
 # Import du sérialiseur que nous utilisons de manière cohérente
 from src.cleeroute.langGraph.learners_api.course_gen.state import PydanticSerializer
-from src.cleeroute.db.app_db import get_app_db_connection
+from src.cleeroute.db.app_db import get_app_db_connection, get_active_pool
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os
 
@@ -276,73 +278,200 @@ async def get_summary(
 ingestion_service = FileIngestionService()
 
 stream_global_chat_router = APIRouter()
+
+# @stream_global_chat_router.post("/stream-sessions/{sessionId}/ask")
+# async def ask_in_session(
+#     sessionId: str,
+#     request: ChatAskRequest,
+#     userId: str = Header(..., alias="userId"),
+#     db: AsyncConnection = Depends(get_app_db_connection)
+# ):
+#     """
+#     Version STREAMING du chat global.
+#     Envoie des événements SSE: 'token' (contenu) et 'end' (fin + métadonnées).
+#     """
+#     profile = await get_user_profile(userId, db)
+#     persona_block = build_personalization_block(profile)
+
+#     # 1. Préparation des données (Identique à avant)
+#     cursor = await db.execute(
+#         "SELECT course_id, scope, section_index, subsection_index, video_id FROM chat_sessions WHERE session_id = %s",
+#         (sessionId,)
+#     )
+#     session_rec = await cursor.fetchone()
+#     if not session_rec:
+#         raise HTTPException(status_code=404, detail="Session not found")
+        
+#     if isinstance(session_rec, tuple):
+#         course_id, scope, sec_idx, sub_idx, vid_id = session_rec
+#     else:
+#         course_id, scope, sec_idx, sub_idx, vid_id = session_rec["course_id"], session_rec["scope"], session_rec["section_index"], session_rec["subsection_index"], session_rec["video_id"]
+
+#     # Reconstruction des contextes
+#     try:
+#         course_obj = await fetch_course_hierarchy(db, str(course_id))
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail="Failed to retrieve course structure")
+
+#     context_text = extract_context_from_course(course_obj, scope, sec_idx, sub_idx, vid_id)
+#     student_quiz_context = await get_student_quiz_context(db, str(course_id))
+
+#     # Récupération historique
+#     msgs_cursor = await db.execute(
+#         "SELECT sender, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
+#         (sessionId,)
+#     )
+#     history_rows = await msgs_cursor.fetchall()
+#     is_first_interaction = (len(history_rows) == 0)
+    
+#     langchain_history = []
+#     for row in history_rows:
+#         sender, content = (row[0], row[1]) if isinstance(row, tuple) else (row['sender'], row['content'])
+#         if sender == 'user':
+#             langchain_history.append(HumanMessage(content=content))
+#         else:
+#             langchain_history.append(AIMessage(content=content))
+    
+#     # Récupération du contexte RAG (documents uploadés)
+#     try:
+#         uploaded_docs_context = await ingestion_service.retrieve_relevant_context(
+#             session_id=sessionId,
+#             db=db,
+#         )
+#     except Exception as e:
+#         print(f"Context Retrieval Error: {e}")
+#         uploaded_docs_context = ""
+
+#     # Préparation de la chaîne
+#     chain = GLOBAL_CHAT_PROMPT | qa_llm
+    
+#     # Inputs pour le LLM
+#     chain_inputs = {
+#         "student_quiz_context": student_quiz_context,
+#         "scope": scope,
+#         "context_text": context_text,
+#         "history": langchain_history,
+#         "user_query": request.userQuery,
+#         "personalization_block": persona_block,
+#         "uploaded_docs_context": uploaded_docs_context
+#     }
+
+#     # --- LE GÉNÉRATEUR ASYNCHRONE ---
+#     async def global_chat_generator():
+#         full_answer_text = ""
+        
+#         try:
+#             # A. Streaming des tokens
+#             async for chunk in chain.astream(chain_inputs):
+#                 content = chunk.content
+#                 if content:
+#                     full_answer_text += content
+#                     # Envoi du token au client
+#                     yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+            
+#             # B. Post-traitement (Une fois le LLM fini)
+#             # Sauvegarde User + AI
+#             await db.execute(
+#                 """
+#                 INSERT INTO chat_messages (session_id, sender, content) 
+#                 VALUES (%s, 'user', %s), (%s, 'ai', %s)
+#                 """,
+#                 (sessionId, request.userQuery, sessionId, full_answer_text)
+#             )
+
+#             # Gestion du Titre (Si premier message)
+#             if is_first_interaction:
+#                 try:
+#                     title_chain = GENERATE_SESSION_TITLE_PROMPT | qa_llm
+#                     title_response = await title_chain.ainvoke({"user_query": request.userQuery})
+#                     new_title = title_response.content.strip().replace('"', '')
+#                     await db.execute(
+#                         "UPDATE chat_sessions SET title = %s, updated_at = CURRENT_TIMESTAMP WHERE session_id = %s",
+#                         (new_title, sessionId)
+#                     )
+#                 except Exception as e:
+#                     print(f"Title Gen Error: {e}")
+#                     await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
+#             else:
+#                 await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
+
+#             # C. Envoi de l'événement de fin
+#             yield f"data: {json.dumps({'type': 'end', 'status': 'completed'})}\n\n"
+
+#         except Exception as e:
+#             print(f"Stream Error: {e}")
+#             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+#     # Retour de la réponse streamée
+#     return StreamingResponse(global_chat_generator(), media_type="text/event-stream")
+
+
+
 @stream_global_chat_router.post("/stream-sessions/{sessionId}/ask")
-async def ask_in_session(
+async def ask_in_session_stream(
     sessionId: str,
     request: ChatAskRequest,
     userId: str = Header(..., alias="userId"),
-    db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
     Version STREAMING du chat global.
-    Envoie des événements SSE: 'token' (contenu) et 'end' (fin + métadonnées).
+    Utilise get_active_pool() pour garantir l'accès à la DB.
     """
-    profile = await get_user_profile(userId, db)
-    persona_block = build_personalization_block(profile)
-
-    # 1. Préparation des données (Identique à avant)
-    cursor = await db.execute(
-        "SELECT course_id, scope, section_index, subsection_index, video_id FROM chat_sessions WHERE session_id = %s",
-        (sessionId,)
-    )
-    session_rec = await cursor.fetchone()
-    if not session_rec:
-        raise HTTPException(status_code=404, detail="Session not found")
-        
-    if isinstance(session_rec, tuple):
-        course_id, scope, sec_idx, sub_idx, vid_id = session_rec
-    else:
-        course_id, scope, sec_idx, sub_idx, vid_id = session_rec["course_id"], session_rec["scope"], session_rec["section_index"], session_rec["subsection_index"], session_rec["video_id"]
-
-    # Reconstruction des contextes
-    try:
-        course_obj = await fetch_course_hierarchy(db, str(course_id))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to retrieve course structure")
-
-    context_text = extract_context_from_course(course_obj, scope, sec_idx, sub_idx, vid_id)
-    student_quiz_context = await get_student_quiz_context(db, str(course_id))
-
-    # Récupération historique
-    msgs_cursor = await db.execute(
-        "SELECT sender, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC",
-        (sessionId,)
-    )
-    history_rows = await msgs_cursor.fetchall()
-    is_first_interaction = (len(history_rows) == 0)
     
-    langchain_history = []
-    for row in history_rows:
-        sender, content = (row[0], row[1]) if isinstance(row, tuple) else (row['sender'], row['content'])
-        if sender == 'user':
-            langchain_history.append(HumanMessage(content=content))
-        else:
-            langchain_history.append(AIMessage(content=content))
-    
-    # Récupération du contexte RAG (documents uploadés)
+    # 1. Récupération du Pool Global (Assurez-vous que l'app a démarré)
     try:
-        uploaded_docs_context = await ingestion_service.retrieve_relevant_context(
-            session_id=sessionId,
-            db=db,
-        )
-    except Exception as e:
-        print(f"Context Retrieval Error: {e}")
-        uploaded_docs_context = ""
+        pool = get_active_pool()
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail="Database pool not initialized")
 
-    # Préparation de la chaîne
+    # --- PHASE 1 : PRÉPARATION (Lecture avec connexion temporaire) ---
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            
+            # Profil (Appel corrigé : db, userId)
+            profile = await get_user_profile(db=conn, user_id = userId)
+            persona_block = build_personalization_block(profile)
+
+            # Session Info
+            await cur.execute(
+                "SELECT course_id, scope, section_index, subsection_index, video_id FROM chat_sessions WHERE session_id = %s",
+                (sessionId,)
+            )
+            session_rec = await cur.fetchone()
+            if not session_rec:
+                raise HTTPException(status_code=404, detail="Session not found")
+            
+            if isinstance(session_rec, tuple):
+                course_id, scope, sec_idx, sub_idx, vid_id = session_rec
+            else:
+                course_id, scope, sec_idx, sub_idx, vid_id = session_rec["course_id"], session_rec["scope"], session_rec["section_index"], session_rec["subsection_index"], session_rec["video_id"]
+
+            # Historique
+            await cur.execute("SELECT sender, content FROM chat_messages WHERE session_id = %s ORDER BY created_at ASC", (sessionId,))
+            history_rows = await cur.fetchall()
+            is_first_interaction = (len(history_rows) == 0)
+            
+            langchain_history = []
+            for row in history_rows:
+                sender, content = (row[0], row[1]) if isinstance(row, tuple) else (row['sender'], row['content'])
+                if sender == 'user': langchain_history.append(HumanMessage(content=content))
+                else: langchain_history.append(AIMessage(content=content))
+
+            # Contextes
+            try:
+                course_obj = await fetch_course_hierarchy(conn, str(course_id))
+                context_text = extract_context_from_course(course_obj, scope, sec_idx, sub_idx, vid_id)
+                student_quiz_context = await get_student_quiz_context(conn, str(course_id))
+                uploaded_docs_context = await ingestion_service.retrieve_relevant_context(sessionId, conn)
+            except Exception as e:
+                print(f"Context Warning: {e}")
+                context_text = ""
+                student_quiz_context = ""
+                uploaded_docs_context = ""
+
+    # --- PHASE 2 : INPUTS LLM ---
     chain = GLOBAL_CHAT_PROMPT | qa_llm
     
-    # Inputs pour le LLM
     chain_inputs = {
         "student_quiz_context": student_quiz_context,
         "scope": scope,
@@ -353,51 +482,44 @@ async def ask_in_session(
         "uploaded_docs_context": uploaded_docs_context
     }
 
-    # --- LE GÉNÉRATEUR ASYNCHRONE ---
+    # --- PHASE 3 : GÉNÉRATEUR (Streaming + Écriture) ---
     async def global_chat_generator():
         full_answer_text = ""
-        
         try:
-            # A. Streaming des tokens
+            # A. Streaming
             async for chunk in chain.astream(chain_inputs):
                 content = chunk.content
                 if content:
                     full_answer_text += content
-                    # Envoi du token au client
                     yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
             
-            # B. Post-traitement (Une fois le LLM fini)
-            # Sauvegarde User + AI
-            await db.execute(
-                """
-                INSERT INTO chat_messages (session_id, sender, content) 
-                VALUES (%s, 'user', %s), (%s, 'ai', %s)
-                """,
-                (sessionId, request.userQuery, sessionId, full_answer_text)
-            )
-
-            # Gestion du Titre (Si premier message)
-            if is_first_interaction:
-                try:
-                    title_chain = GENERATE_SESSION_TITLE_PROMPT | qa_llm
-                    title_response = await title_chain.ainvoke({"user_query": request.userQuery})
-                    new_title = title_response.content.strip().replace('"', '')
-                    await db.execute(
-                        "UPDATE chat_sessions SET title = %s, updated_at = CURRENT_TIMESTAMP WHERE session_id = %s",
-                        (new_title, sessionId)
+            # B. Sauvegarde (On réutilise le pool capturé au début)
+            async with pool.connection() as conn_save:
+                async with conn_save.cursor() as cur_save:
+                    # Insert Messages
+                    await cur_save.execute(
+                        "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'user', %s), (%s, 'ai', %s)",
+                        (sessionId, request.userQuery, sessionId, full_answer_text)
                     )
-                except Exception as e:
-                    print(f"Title Gen Error: {e}")
-                    await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
-            else:
-                await db.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
-
-            # C. Envoi de l'événement de fin
+                    
+                    # Auto Title
+                    if is_first_interaction:
+                        try:
+                            title_chain = GENERATE_SESSION_TITLE_PROMPT | qa_llm
+                            title_resp = await title_chain.ainvoke({"user_query": request.userQuery})
+                            new_title = title_resp.content.strip().replace('"', '')
+                            await cur_save.execute("UPDATE chat_sessions SET title = %s WHERE session_id = %s", (new_title, sessionId))
+                        except Exception as e:
+                            print(f"Title Gen Error: {e}")
+                    
+                    # Update Timestamp
+                    await cur_save.execute("UPDATE chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = %s", (sessionId,))
+            
+            # C. Fin
             yield f"data: {json.dumps({'type': 'end', 'status': 'completed'})}\n\n"
 
         except Exception as e:
             print(f"Stream Error: {e}")
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
-    # Retour de la réponse streamée
     return StreamingResponse(global_chat_generator(), media_type="text/event-stream")

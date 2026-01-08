@@ -165,7 +165,9 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
         prompt = SKIP_FEEDBACK_PROMPT.format(
             question_text=target_question.questionText,
             correct_answer_text=target_question.options[target_question.correctAnswerIndex],
-            explanation=target_question.explanation
+            explanation=target_question.explanation,
+            language=profile.language,
+            personalization_block=persona_block,
         )
         response = await llm.ainvoke(prompt)
 
@@ -188,7 +190,9 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
         prompt = GENERATE_HINT_PROMPT.format(
             question_text=target_question.questionText,
             options_str=str(target_question.options),
-            explanation=target_question.explanation
+            explanation=target_question.explanation,
+            language=profile.language,
+            personalization_block=persona_block,
         )
         # user_message_content = f"Requested a hint."
         
@@ -215,7 +219,9 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
             chat_history=history_text,
             question_text=target_question.questionText if target_question else "General Context",
             explanation=target_question.explanation if target_question else "N/A",
-            user_query=user_query
+            user_query=user_query,
+            language=profile.language,
+            personalization_block=persona_block,
         )
         # user_message_content = user_query
         
@@ -261,6 +267,10 @@ async def generate_summary_node(state: QuizGraphState) -> dict:
         print(f"--- FATAL ERROR: Could not deserialize state for summary: {e} ---")
         return {}
     
+    # Récupération profil
+    profile_data = json.loads(state["user_profile"])
+    profile = UserProfile(**profile_data)
+    
     user_answers = state["user_answers"]
     
     total_count = len(questions)
@@ -287,7 +297,8 @@ async def generate_summary_node(state: QuizGraphState) -> dict:
         correct_count=correct_count,
         incorrect_count=incorrect_count,
         skipped_count=total_skipped,
-        total_count=total_count
+        total_count=total_count,
+        language=profile.language,
     )
     
     response = await llm.ainvoke(prompt)
