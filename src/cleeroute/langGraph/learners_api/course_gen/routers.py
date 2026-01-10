@@ -40,6 +40,7 @@ syllabus_router = APIRouter()
         500: {"description": "Internal server error during graph initialization."}
     }
 )
+
 async def start_learning_journey(
     request: SyllabusRequest,
     x_youtube_api_key: Optional[str] = Header(None, alias="X-Youtube-Api-Key"),
@@ -70,12 +71,14 @@ async def start_learning_journey(
         # On convertit la liste de HttpUrl en une liste de chaînes de caractères
         user_links_str = [str(link) for link in request.user_input_links]
 
-    initial_state = GraphState(
-        user_input_text=request.user_input_text,
-        user_input_links=user_links_str,
-        metadata_str=PydanticSerializer.dumps(request.metadata),
-        language=request.language 
-    )
+
+    initial_state = {
+        "user_input_text": request.user_input_text,
+        "user_input_links": user_links_str,
+        "metadata_str": PydanticSerializer.dumps(request.metadata),
+        "language": request.language,
+    }
+
 
     # Stream the graph. It will run until the first interruption (the first question).
     last_state = None
@@ -88,8 +91,6 @@ async def start_learning_journey(
             next_question=last_state['current_question']
         )
     else:
-        # Ce cas se produit si le graphe se termine immédiatement sans poser de question.
-        # C'est un état d'erreur ou un cas non prévu.
         raise HTTPException(
             status_code=500, 
             detail="Graph finished unexpectedly without asking a question."
@@ -139,30 +140,13 @@ async def continue_learning_journey(
     current_values = current_snapshot.values
     current_history = current_values.get('conversation_history', [])
 
-    # 2. PRÉPARER la mise à jour
-    # updates_to_save = {}
-    # if current_history:
-    #     # On prend le dernier tour (qui contient la question de l'IA)
-    #     last_human, last_ai = current_history[-1]
-        
-    #     # On crée une NOUVELLE liste d'historique avec le dernier tour mis à jour.
-    #     # On prend tout sauf le dernier élément, et on ajoute le dernier élément corrigé.
-    #     updated_history = current_history[:-1] + [(request.user_answer, last_ai)]
-    #     updates_to_save["conversation_history"] = updated_history
-    
     update_payload = {"conversation_history": [(request.user_answer, "")]}
 
     await app_graph.aupdate_state(config, update_payload)
 
-    # 4. Resume the graph execution
-    # Étape 2: Reprendre le graphe SANS nouvelle entrée.
-    # CHANGEMENT CRUCIAL: Remplacer 'update_payload' par 'None'.
-    # Cela force le graphe à charger l'état que nous venons de sauvegarder
-    # et à continuer son chemin, au lieu de redémarrer.
     async for final_state in app_graph.astream(None, config, stream_mode="values"):
         pass
 
-    # Le reste de la fonction est déjà correct.
     if final_state and final_state.get('is_conversation_finished'):
 
         # On récupère le message personnalisé généré par l'IA (stocké dans current_question par le nœud)

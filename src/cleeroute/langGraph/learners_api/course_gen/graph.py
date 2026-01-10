@@ -46,7 +46,9 @@ def get_youtube_service():
 def initialize_state(state: GraphState) -> dict: # <-- Retourne un dict
     """Initializes non-input fields of the state."""
     print("--- State Initialized ---")
+    
     lang = state['language'] if 'language' in state else "English"
+    # print(f"Initial language: {lang}")
     return {
         'conversation_history': [],
         'current_question': None,
@@ -206,7 +208,7 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
     # # On désérialise les métadonnées pour les rendre lisibles
     metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
 
-    # print("language:", state['language'])
+    print("language:", state['language'])
     
     prompt = Prompts.HUMAN_IN_THE_LOOP_CONVERSATION.format(
         history=history_str,
@@ -233,7 +235,11 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
         if not closing_message:
             closing_message = "Generating course..."
 
-        return {"is_conversation_finished": True, "current_question": closing_message}
+        return {
+            "is_conversation_finished": True, 
+            "current_question": closing_message,
+            "language": state["language"]
+            }
     else:
         question = content
         print(f"--- Asking User: {question} ---")
@@ -251,7 +257,8 @@ async def intelligent_conversation(state: GraphState) -> dict: # <-- Retourne un
         return {
             "is_conversation_finished": False,
             "current_question": question,
-            "conversation_history": current_history
+            "conversation_history": current_history,
+            "language": state["language"]
         }
 
 def should_continue_conversation(state: GraphState) -> Literal["continue_conversation", "end_conversation"]:

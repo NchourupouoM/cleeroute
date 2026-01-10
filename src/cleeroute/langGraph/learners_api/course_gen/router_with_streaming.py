@@ -75,7 +75,8 @@ async def start_learning_journey(
     initial_values = {
         "user_input_text": request.user_input_text,
         "user_input_links": user_links_str,
-        "metadata_str": PydanticSerializer.dumps(request.metadata)
+        "metadata_str": PydanticSerializer.dumps(request.metadata),
+        "language": request.language,
     }
 
     # RETOURNER UNE STREAMING RESPONSE
