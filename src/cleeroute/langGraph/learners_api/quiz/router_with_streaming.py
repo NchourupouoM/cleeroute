@@ -428,7 +428,7 @@ async def ask_in_session_stream(
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             
-            # Profil (Appel corrigé : db, userId)
+            # Profil: Vérification Session & Profil
             profile = await get_user_profile(db=conn, user_id = userId)
             persona_block = build_personalization_block(profile)
 
@@ -454,8 +454,20 @@ async def ask_in_session_stream(
             langchain_history = []
             for row in history_rows:
                 sender, content = (row[0], row[1]) if isinstance(row, tuple) else (row['sender'], row['content'])
-                if sender == 'user': langchain_history.append(HumanMessage(content=content))
-                else: langchain_history.append(AIMessage(content=content))
+                if sender == 'user': 
+                    langchain_history.append(HumanMessage(content=content))
+                else: 
+                    langchain_history.append(AIMessage(content=content))
+
+            # On insère le message utilisateur MAINTENANT. 
+            # Il aura un timestamp T. Le message AI aura T + temps_de_generation.
+            await cur.execute(
+                """
+                INSERT INTO chat_messages (session_id, sender, content) 
+                VALUES (%s, 'user', %s)
+                """,
+                (sessionId, request.userQuery)
+            )
 
             # Contextes
             try:
@@ -496,10 +508,10 @@ async def ask_in_session_stream(
             # B. Sauvegarde (On réutilise le pool capturé au début)
             async with pool.connection() as conn_save:
                 async with conn_save.cursor() as cur_save:
-                    # Insert Messages
+                    # Insert AI Messages after generation
                     await cur_save.execute(
-                        "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'user', %s), (%s, 'ai', %s)",
-                        (sessionId, request.userQuery, sessionId, full_answer_text)
+                        "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'ai', %s)",
+                        (sessionId, full_answer_text)
                     )
                     
                     # Auto Title
