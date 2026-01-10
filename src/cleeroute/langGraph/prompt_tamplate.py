@@ -27,7 +27,7 @@ SUMMARY_PROMPT = [
 	SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
 	1. Output MUST be a single valid JSON object.
 	2. The JSON MUST strictly match the `Course_summary` schema.
-	3. JSON KEYS must remain EXACTLY in ENGLISH.
+	3. JSON KEYS must remain EXACTLY in English.
 	4. JSON VALUES must be written ONLY in {language}.
 	5. Do NOT add comments, explanations, or extra fields.
 	6. If any rule is violated, regenerate the full output.
@@ -40,7 +40,7 @@ SUMMARY_PROMPT = [
 	---
 
 	**LANGUAGE CONSTRAINT (CRITICAL):**
-	- Keys → ENGLISH ONLY
+	- Keys → English ONLY
 	- Values → {language} ONLY
 	- Never mix languages inside a value.
 
@@ -100,7 +100,7 @@ DETAILS_PROMPT = [
 	("system", """
 		SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
 		1. Output MUST be valid JSON matching the `Course_details` schema.
-		2. JSON KEYS must remain in ENGLISH.
+		2. JSON KEYS must remain in English.
 		3. JSON VALUES must be written ONLY in {language}, except enums.
 		4. The field `desired_level` MUST be EXACTLY one of:
 		"Beginner", "Intermediate", "Advanced"
@@ -115,9 +115,9 @@ DETAILS_PROMPT = [
 		---
 
 		**LANGUAGE RULE:**
-		- Keys → ENGLISH
+		- Keys → English
 		- Values → {language}
-		- Enum values → ENGLISH ONLY (technical constraint)
+		- Enum values → English ONLY (technical constraint)
 
 		---
 
@@ -204,7 +204,7 @@ COURSE_STRUCTURE_PROMPT = """
 
 	**LANGUAGE CONSTRAINT:**
 	- All textual VALUES must be written in {language}.
-	- JSON KEYS must remain in ENGLISH.
+	- JSON KEYS must remain in English.
 
 	---
 
@@ -339,7 +339,7 @@ PROGECT_GENERATE_PROMPT = """
 
 	**LANGUAGE CONSTRAINT:**
 	- ALL content must be written in {language}.
-	- JSON keys remain in ENGLISH.
+	- JSON keys remain in English.
 
 	---
 
