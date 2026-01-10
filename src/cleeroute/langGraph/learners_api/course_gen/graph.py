@@ -39,10 +39,7 @@ def get_youtube_service():
 
 # checkpointer = get_checkpointer()
 
-# --------------------------
 # Graph Nodes
-# --------------------------
-
 def initialize_state(state: GraphState) -> dict: # <-- Retourne un dict
     """Initializes non-input fields of the state."""
     print("--- State Initialized ---")

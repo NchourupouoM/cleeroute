@@ -33,9 +33,11 @@ stream_syllabus_router = APIRouter()
 
 async def stream_graph_execution(graph, input_state, config):
     thread_id = config["configurable"]["thread_id"]
+
+    # 1. Envoi des métadonnées initiales
     yield json.dumps({"event": "metadata", "data": {"thread_id": thread_id}}) + "\n"
 
-    # CHANGEMENT ICI : Passez à version="v2"
+    # 2. Streaming des tokens (Contenu).
     async for event in graph.astream_events(input_state, config, version="v2"):
         
         kind = event["event"]
@@ -50,10 +52,27 @@ async def stream_graph_execution(graph, input_state, config):
             
             if content:
                 # 🔹 NETTOYAGE : ne jamais afficher le token de contrôle [CONVERSATION_FINISHED]
-                content = content.replace("[CONVERSATION_FINISHED]", "").strip()
+                clean_content = content.replace("[CONVERSATION_FINISHED]", "").strip()
 
-                if content:
-                    yield json.dumps({"event": "token", "data": content}) + "\n"
+                if clean_content:
+                    yield json.dumps({"event": "token", "data": clean_content}) + "\n"
+    
+    # 3.Récupération et envoi de l'état final (Finished ou pas ?)
+    # Une fois la boucle terminée, le graphe a fini son exécution pour ce tour.
+    # On récupère l'état sauvegardé dans le checkpointer.
+    current_snapshot = await graph.aget_state(config)
+    
+    is_finished = False
+    if current_snapshot and current_snapshot.values:
+        # On récupère la valeur calculée par le nœud 'intelligent_conversation'
+        is_finished = current_snapshot.values.get("is_conversation_finished", False)
+
+    # 4. Envoi de l'événement de fin avec le statut
+    end_payload = {
+        "is_conversation_finished": is_finished
+    }
+    yield json.dumps({"event": "status", "data": end_payload}) + "\n"
+
 
 
 @stream_syllabus_router.post("/stream_gen_syllabus", status_code=201)
