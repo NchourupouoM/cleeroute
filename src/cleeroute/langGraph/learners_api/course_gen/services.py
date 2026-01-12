@@ -399,7 +399,7 @@ async def fast_search_youtube(user_input: str, language: str) -> List[str]:
                 q=search_term,
                 part="snippet",
                 type="playlist",
-                maxResults=5,  # Reduced from 15 to 5
+                maxResults=10,  # Reduced from 15 to 5
                 relevanceLanguage=language[:2] if len(language) >= 2 else "en"
             )
             return req.execute()
@@ -413,7 +413,7 @@ async def fast_search_youtube(user_input: str, language: str) -> List[str]:
             candidates.append((pid, score))
 
         candidates.sort(key=lambda x: x[1], reverse=True)
-        return [c[0] for c in candidates[:3]]  # Return top 3 instead of 5
+        return [c[0] for c in candidates[:5]]  # Return top 5
 
     except Exception as e:
         print(f"--- Search Error: {e} ---")
@@ -453,7 +453,7 @@ async def fetch_playlist_light(playlist_input: str, limit: int = 1000) -> Option
 
                 videos.append(VideoInfo(
                     title=snippet.get("title", ""),
-                    description=snippet.get("description", "")[:150],  # Truncate description
+                    description=snippet.get("description", "")[:200],  # Truncate description
                     video_url=f"https://www.youtube.com/watch?v={vid_id}",
                     thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
                     channel_title=snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or pl_info.get('channelTitle')
