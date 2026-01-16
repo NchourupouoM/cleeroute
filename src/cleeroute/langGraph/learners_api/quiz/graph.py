@@ -17,9 +17,12 @@ from src.cleeroute.langGraph.learners_api.course_gen.state import PydanticSerial
 from src.cleeroute.langGraph.learners_api.quiz.services.user_service import build_personalization_block
 from src.cleeroute.langGraph.learners_api.quiz.models import UserProfile
 
+from src.cleeroute.langGraph.learners_api.utils import get_llm, resilient_retry_policy
+from dotenv import load_dotenv
+load_dotenv()
 
 # Initialisation du LLM
-llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
+llm = get_llm(api_key=os.getenv("GEMINI_API_KEY"))
 
 async def generate_questions_node(state: QuizGraphState) -> dict:
     """
@@ -376,9 +379,9 @@ async def get_quiz_graph() -> Pregel:
             workflow = StateGraph(QuizGraphState)
 
             # --- Ajout des Nœuds ---
-            workflow.add_node("generate_questions", generate_questions_node)
-            workflow.add_node("process_interaction", process_interaction_node)
-            workflow.add_node("generate_summary", generate_summary_node)
+            workflow.add_node("generate_questions", generate_questions_node, retry=resilient_retry_policy)
+            workflow.add_node("process_interaction", process_interaction_node, retry=resilient_retry_policy)
+            workflow.add_node("generate_summary", generate_summary_node, retry=resilient_retry_policy)
             
             # --- Définition du Flux ---
             workflow.set_conditional_entry_point(

@@ -23,7 +23,7 @@ class Course(BaseModel):
     introduction: Optional[str] = None
     sections: List[Section]
 
-from src.cleeroute.langGraph.prompt_tamplate import COURSE_STRUCTURE_PROMPT
+from src.cleeroute.langGraph.learners_api.metadata_from_learner.prompt_tamplate import COURSE_STRUCTURE_PROMPT
 load_dotenv()
 
 

@@ -6,9 +6,8 @@ from src.cleeroute.db.checkpointer import lifespan as checkpointer_lifespan
 from src.cleeroute.db.app_db import app_db_lifespan as application_db_lifespan
 from contextlib import asynccontextmanager
 
-from src.cleeroute.db.models import VideoSearch, VideoResponse, PaginatedVideoResponse
 from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string
-from src.cleeroute.langGraph.meta_data_gen import router_metadata_2, router_metadata_1
+from src.cleeroute.langGraph.learners_api.metadata_from_learner.meta_data_gen import router_metadata_2, router_metadata_1
 from src.cleeroute.langGraph.course_agents import course_structure_router
 from src.cleeroute.langGraph.project_generator import project_content_router
 

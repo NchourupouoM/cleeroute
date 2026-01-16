@@ -12,8 +12,11 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+from src.cleeroute.langGraph.learners_api.utils import resilient_retry_policy, get_llm
+
+
 # Initialisez votre LLM (à placer en haut du fichier)
-llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
+llm = get_llm(os.getenv("GEMINI_API_KEY"))
 checkpointer = get_checkpointer()
 
 def plan_modification_node(state: ModificationGraphState) -> ModificationGraphState:
@@ -411,13 +414,13 @@ def build_modification_graph():
     workflow = StateGraph(ModificationGraphState)
 
     # 1. Ajout de TOUS les nœuds, y compris le nouveau
-    workflow.add_node("plan_modification", plan_modification_node)
-    workflow.add_node("execute_direct_modification", execute_direct_modification_node)
-    workflow.add_node("execute_search", execute_search_node)
-    workflow.add_node("apply_add_replace", apply_add_replace_node) # NOUVEAU
-    workflow.add_node("execute_clarify", execute_clarify_node)
-    workflow.add_node("execute_finalize", execute_finalize_node)
-    workflow.add_node("generate_user_message", generate_user_message_node)
+    workflow.add_node("plan_modification", plan_modification_node, retry=resilient_retry_policy)
+    workflow.add_node("execute_direct_modification", execute_direct_modification_node, retry=resilient_retry_policy)
+    workflow.add_node("execute_search", execute_search_node, retry=resilient_retry_policy)
+    workflow.add_node("apply_add_replace", apply_add_replace_node, retry=resilient_retry_policy) # NOUVEAU
+    workflow.add_node("execute_clarify", execute_clarify_node, retry=resilient_retry_policy)
+    workflow.add_node("execute_finalize", execute_finalize_node, retry=resilient_retry_policy)
+    workflow.add_node("generate_user_message", generate_user_message_node, retry=resilient_retry_policy)
     
     workflow.set_entry_point("plan_modification")
 

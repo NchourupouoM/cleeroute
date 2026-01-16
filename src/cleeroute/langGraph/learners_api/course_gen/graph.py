@@ -21,13 +21,9 @@ import xml.etree.ElementTree as ET
 from dotenv import load_dotenv
 load_dotenv()
 
-def get_llm():
-    return ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_2", "gemini-flash-lite-latest"), 
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        max_tokens=8192,
-        temperature=0.3
-    )
+# from utils 
+from src.cleeroute.langGraph.learners_api.utils import resilient_retry_policy, get_llm
+
 
 # google api
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -580,8 +576,8 @@ def create_conversation_graph(checkpointer=None):
 
     workflow = StateGraph(GraphState)
 
-    workflow.add_node("initialize", initialize_state)
-    workflow.add_node("intelligent_conversation", intelligent_conversation)
+    workflow.add_node("initialize", initialize_state, retry=resilient_retry_policy)
+    workflow.add_node("intelligent_conversation", intelligent_conversation, retry=resilient_retry_policy)
 
     workflow.set_entry_point("initialize")
 
@@ -953,8 +949,8 @@ def create_syllabus_generation_graph(checkpointer=None):
     
     workflow = StateGraph(GraphState)
 
-    workflow.add_node("fast_data_collection", fast_data_collection)
-    workflow.add_node("fast_syllabus_generation", fast_syllabus_generation)
+    workflow.add_node("fast_data_collection", fast_data_collection, retry=resilient_retry_policy)
+    workflow.add_node("fast_syllabus_generation", fast_syllabus_generation, retry=resilient_retry_policy)
 
     workflow.set_entry_point("fast_data_collection")
     workflow.add_edge("fast_data_collection", "fast_syllabus_generation")

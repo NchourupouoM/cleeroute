@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 from ..models import Project
 
-from src.cleeroute.langGraph.prompt_tamplate import PROGECT_GENERATE_PROMPT
+from src.cleeroute.langGraph.learners_api.metadata_from_learner.prompt_tamplate import PROGECT_GENERATE_PROMPT
 load_dotenv()
 
 

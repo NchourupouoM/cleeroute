@@ -1,20 +1,18 @@
 import os
-from typing import List,AsyncIterator, Optional
+from typing import List, Optional
 import time
 
 from fastapi import HTTPException, Query, FastAPI, status, Header
 from pydantic import BaseModel, Field
-from starlette.responses import StreamingResponse
 from fastapi import APIRouter
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
-from src.cleeroute.langGraph.prompt_tamplate import CONTEXTE
-from src.cleeroute.models import Course_meta_datas, Course_meta_datas_input
-from src.cleeroute.langGraph.prompt_tamplate import SUMMARY_PROMPT, DETAILS_PROMPT
+from src.cleeroute.langGraph.learners_api.metadata_from_learner.prompt_tamplate import CONTEXTE
+from src.cleeroute.langGraph.learners_api.metadata_from_learner.prompt_tamplate import SUMMARY_PROMPT, DETAILS_PROMPT
 
 load_dotenv()
-
+from src.cleeroute.langGraph.learners_api.utils import get_llm
 
 class Course_summary(BaseModel):
     """
@@ -34,18 +32,6 @@ class Course_details(BaseModel):
     expectations: List[str] = Field(description="A list of what is expected from the participants during the course (e.g., 'active participation', 'completion of assignments', 'prioritization of tasks').")
     prerequisites: List[str] = Field(description="A list of essential prior knowledge, skills, or tools participants should possess before starting the course.")
     desired_level: str = Field(description="The target proficiency level for the audience. Must be one of: 'Beginner', 'Intermediate', 'Advanced'.")
-
-
-# Initialisation de l'LLM
-# google_api_key = os.getenv("GEMINI_API_KEY")
-# if not google_api_key:
-#     raise ValueError("GEMINI_API_KEY environment variable is not set. Please set it to your Google API key.")
-
-# llm = ChatGoogleGenerativeAI(
-#     model= os.getenv("MODEL_2"),
-#     temperature=0.1,
-#     google_api_key=google_api_key,
-# )
 
 
 # Chaîne LangChain pour la génération du résumé
@@ -96,10 +82,7 @@ async def generate_summary_endpoint(
     if not api_key_to_use:
         raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
     
-    llm_to_use = ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_2", "gemini-2.5-flash"),
-        google_api_key=api_key_to_use,
-    )
+    llm_to_use = get_llm()
 
     summary_llm_chain = get_summary_llm_chain(llm_instance=llm_to_use)
     start_time = time.perf_counter()
@@ -144,10 +127,7 @@ async def generate_details_endpoint(
     if not api_key_to_use:
         raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
     
-    llm_to_use = ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_2", "gemini-2.5-flash"),
-        google_api_key=api_key_to_use,
-    )
+    llm_to_use = get_llm()
 
     details_llm_chain = get_details_llm_chain(llm_instance=llm_to_use)
 
@@ -173,78 +153,3 @@ async def generate_details_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate details: {str(e)}"
         )
-
-
-
-
-
-
-# from langchain_google_genai import ChatGoogleGenerativeAI
-# from langchain_core.prompts import ChatPromptTemplate
-# from pydantic import Field
-# from typing import Dict, Any, TypedDict
-# from fastapi.responses import StreamingResponse
-
-# from langgraph.graph import StateGraph, END
-# from fastapi import APIRouter
-
-# import src.cleeroute.langGraph.prompt_tamplate as prompts
-# from src.cleeroute.models import Course_meta_datas, Course_meta_datas_input
-# from langchain_groq import ChatGroq
-# import os
-# import json
-# from dotenv import load_dotenv
-# load_dotenv()
-
-# # --- Définitions (inchangées) ---
-# llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL"), google_api_key=os.getenv("GEMINI_API_KEY"))
-
-
-# class GraphState(TypedDict):
-#     initial_request: Course_meta_datas_input
-#     course_meta_data: Dict 
-
-# def meta_data_gen_agent():
-#     structured_llm = llm.with_structured_output(Course_meta_datas)
-#     prompt = ChatPromptTemplate.from_template(prompts.COURSE_META_DATA_PROMPT)
-#     return prompt | structured_llm
-
-# def meta_data_gen_node(state: GraphState) -> Dict[str, Any]:
-#     print("--- Execution ---")
-#     agent = meta_data_gen_agent()
-#     result: Course_meta_datas = agent.invoke(state["initial_request"].model_dump())
-#     print(f"--- INFO: Meta-data generated for '{result.title}' course ---")
-#     return {"course_meta_data": result.model_dump()}
-
-# def get_meta_data_graph():
-#     workflow = StateGraph(GraphState)
-#     workflow.add_node("meta_data_gen", meta_data_gen_node)
-#     workflow.set_entry_point("meta_data_gen")
-#     workflow.add_edge("meta_data_gen", END)
-#     return workflow.compile()
-
-# router_metadata = APIRouter()
-
-# @router_metadata.post("/generate-stream", response_model=Course_meta_datas)
-# async def generate_metadata_stream(request: Course_meta_datas_input):
-#     """
-#     Takes a simple user request and STREAMS the result of the metadata generation.
-#     """
-#     graph = get_meta_data_graph()
-    
-#     async def stream_generator():
-#         inputs = {"initial_request": request}
-        
-#         async for output in graph.astream(inputs):
-
-#             if "meta_data_gen" in output:
-#                 response_chunk = {
-#                     "event": "metadata_ready",
-#                     "data": output["meta_data_gen"]["course_meta_data"]
-#                 }
-                
-#                 yield f"data: {json.dumps(response_chunk)}\n\n"
-        
-#         yield f"data: {json.dumps({'event': 'end'})}\n\n"
-
-#     return StreamingResponse(stream_generator(), media_type="text/event-stream")
