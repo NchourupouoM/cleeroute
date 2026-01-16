@@ -15,16 +15,14 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from .models import AnalyzedPlaylist, VideoInfo, FilteredPlaylistSelection
 from .prompt import Prompts
 
+from src.cleeroute.langGraph.learners_api.utils import get_llm
+
 load_dotenv()
 
 # Vérification de la clé API au chargement du module
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 if not YOUTUBE_API_KEY:
     raise ValueError("YOUTUBE_API_KEY must be set in env")
-
-# ==============================================================================
-# FACTORY FUNCTIONS (CRITIQUE POUR LA CONCURRENCE)
-# ==============================================================================
 
 def get_youtube_service():
     """
@@ -33,19 +31,6 @@ def get_youtube_service():
     """
     return build('youtube', 'v3', developerKey=os.getenv("YOUTUBE_API_KEY"), cache_discovery=False)
 
-def get_llm():
-    """
-    Crée une NOUVELLE instance du LLM pour éviter les erreurs de boucle d'événements (gRPC).
-    """
-    return ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_2", "gemini-2.5-flash"),
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        max_tokens=8192
-    )
-
-# ==============================================================================
-# URL UTILITIES
-# ==============================================================================
 
 YOUTUBE_URL_REGEX = re.compile(
     r"(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})"
@@ -72,10 +57,6 @@ def classify_youtube_url(url: str) -> str:
         print(f"--- ERROR classifying URL {url}: {e}. Returning 'unknown'. ---")
         return 'unknown'
 
-# ==============================================================================
-# PLAYLIST SERVICES
-# ==============================================================================
-
 async def fetch_playlist_details(playlist_url: str) -> Optional[AnalyzedPlaylist]:
     """
     Fetches details for a single playlist given its full URL.
@@ -94,7 +75,7 @@ async def fetch_playlist_details(playlist_url: str) -> Optional[AnalyzedPlaylist
         print(f"Error parsing playlist URL {playlist_url}: {e}")
         return None
 
-async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
+async def _fetch_playlist_items(playlist_id: str, max_results: int = 1000) -> Optional[AnalyzedPlaylist]:
     """
     Internal function to fetch playlist items using a thread-local service instance.
     """
@@ -131,7 +112,7 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
                 vid_request = local_service.playlistItems().list(
                     part="snippet,contentDetails",
                     playlistId=playlist_id,
-                    maxResults=50,
+                    maxResults=max_results,
                     pageToken=next_page_token
                 )
                 vid_response = vid_request.execute()
@@ -183,11 +164,26 @@ async def _fetch_playlist_items(playlist_id: str) -> Optional[AnalyzedPlaylist]:
         print(f"--- Unexpected Error fetching playlist {playlist_id}: {e} ---")
         return None
 
-# ==============================================================================
-# SEARCH & FILTER SERVICES
-# ==============================================================================
+def heuristic_relevance_score(snippet: Dict, user_input: str) -> float:
+    score = 0.0
+    title = snippet.get("title", "").lower()
+    desc = snippet.get("description", "").lower()
+    keywords = user_input.lower().split()
 
-async def search_and_filter_youtube_playlists(queries: List[str], user_input: str, language: str):
+    matches = sum(1 for w in keywords if w in title)
+    score += matches * 10
+
+    good_terms = ["course", "tutorial", "full", "complete", "bootcamp", "series", "playlist"]
+    if any(t in title for t in good_terms):
+        score += 15
+
+    bad_terms = ["short", "funny", "reaction", "gameplay", "trailer"]
+    if any(t in title for t in bad_terms):
+        score -= 50
+
+    return score
+
+async def search_and_filter_youtube_playlists(queries: List[str], user_input: str, language: str, max_results: int = 10) -> List[AnalyzedPlaylist]:
     print("--- Starting High-Quality YouTube Search ---")
 
     async def search_task(query: str):
@@ -200,8 +196,8 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
                 q=query, 
                 part="snippet", 
                 type="playlist", 
-                maxResults=50, 
-                order="date" # ou "relevance" selon le besoin
+                maxResults=max_results, 
+                order="date"
             )
             # Exécution bloquante dans un thread
             return await asyncio.to_thread(request.execute)
@@ -298,10 +294,6 @@ async def search_and_filter_youtube_playlists(queries: List[str], user_input: st
         print(f"--- CRITICAL ERROR during Search Process: {e} ---")
         return []
 
-# ==============================================================================
-# SINGLE VIDEO SERVICE
-# ==============================================================================
-
 async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
     """
     Analyzes a single user-provided YouTube video URL.
@@ -358,34 +350,7 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
         return None
     
 
-
-
-# =============== services optimise
-# ==============================================================================
-# FAST ALGORITHMIC FILTER (0.001s vs 3s LLM)
-# ==============================================================================
-
-def heuristic_relevance_score(snippet: Dict, user_input: str) -> float:
-    score = 0.0
-    title = snippet.get("title", "").lower()
-    desc = snippet.get("description", "").lower()
-    keywords = user_input.lower().split()
-
-    matches = sum(1 for w in keywords if w in title)
-    score += matches * 10
-
-    good_terms = ["course", "tutorial", "full", "complete", "bootcamp", "series", "playlist"]
-    if any(t in title for t in good_terms):
-        score += 15
-
-    bad_terms = ["short", "funny", "reaction", "gameplay", "trailer"]
-    if any(t in title for t in bad_terms):
-        score -= 50
-
-    return score
-
-
-async def fast_search_youtube(user_input: str, language: str) -> List[str]:
+async def fast_search_youtube(user_input: str, language: str, max_results: int = 10) -> List[str]:
     """
     Returns the top 3 most relevant YouTube playlists for the user's query.
     Optimized for speed: reduces API calls and uses a lightweight scoring heuristic.
@@ -399,7 +364,7 @@ async def fast_search_youtube(user_input: str, language: str) -> List[str]:
                 q=search_term,
                 part="snippet",
                 type="playlist",
-                maxResults=10,  # Reduced from 15 to 5
+                maxResults=max_results, 
                 relevanceLanguage=language[:2] if len(language) >= 2 else "en"
             )
             return req.execute()
@@ -422,8 +387,8 @@ async def fast_search_youtube(user_input: str, language: str) -> List[str]:
 
 async def fetch_playlist_light(playlist_input: str, limit: int = 1000) -> Optional[AnalyzedPlaylist]:
     """
-    Fetches a YouTube playlist with a reduced video limit (default: 20).
-    Optimized for speed: minimizes API calls and data processing.
+        Fetches a YouTube playlist with a reduced video limit
+        Optimized for speed: minimizes API calls and data processing.
     """
     playlist_id = playlist_input.split("list=")[1].split("&")[0] if "list=" in playlist_input else playlist_input
 
@@ -440,7 +405,7 @@ async def fetch_playlist_light(playlist_input: str, limit: int = 1000) -> Option
             vid_req = service.playlistItems().list(
                 part="snippet",
                 playlistId=playlist_id,
-                maxResults=limit  # Default: 50 videos
+                maxResults=limit
             )
             vid_resp = vid_req.execute()
 
@@ -453,7 +418,7 @@ async def fetch_playlist_light(playlist_input: str, limit: int = 1000) -> Option
 
                 videos.append(VideoInfo(
                     title=snippet.get("title", ""),
-                    description=snippet.get("description", "")[:200],  # Truncate description
+                    description=snippet.get("description", ""),
                     video_url=f"https://www.youtube.com/watch?v={vid_id}",
                     thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
                     channel_title=snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or pl_info.get('channelTitle')
