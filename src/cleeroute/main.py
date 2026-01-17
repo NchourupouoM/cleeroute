@@ -19,8 +19,8 @@ from src.cleeroute.langGraph.learners_api.course_gen.routers import syllabus_rou
 from src.cleeroute.langGraph.learners_api.course_gen.router_with_streaming import stream_syllabus_router
 from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
 from src.cleeroute.langGraph.learners_api.quiz.routers import quiz_router
-from src.cleeroute.langGraph.learners_api.quiz.routers import global_chat_router
-from src.cleeroute.langGraph.learners_api.quiz.router_with_streaming import stream_global_chat_router
+from src.cleeroute.langGraph.learners_api.chats.routers import global_chat_router
+from src.cleeroute.langGraph.learners_api.chats.routers import stream_global_chat_router
 from src.cleeroute.langGraph.learners_api.quiz.router_with_streaming import stream_quiz_router
 from fastapi import APIRouter
 # from contextlib import asynccontextmanager
