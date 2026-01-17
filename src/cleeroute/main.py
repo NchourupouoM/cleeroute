@@ -19,7 +19,7 @@ from src.cleeroute.langGraph.learners_api.course_gen.routers import syllabus_rou
 from src.cleeroute.langGraph.learners_api.course_gen.router_with_streaming import stream_syllabus_router
 from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
 from src.cleeroute.langGraph.learners_api.quiz.routers import quiz_router
-from src.cleeroute.langGraph.learners_api.chats.routers import global_chat_router
+from src.cleeroute.langGraph.learners_api.chats.routers import global_chat_router, upload_file_router
 from src.cleeroute.langGraph.learners_api.chats.routers import stream_global_chat_router
 from src.cleeroute.langGraph.learners_api.quiz.router_with_streaming import stream_quiz_router
 from fastapi import APIRouter
@@ -129,6 +129,8 @@ app.include_router(stream_quiz_router, prefix="", tags=["Streaming Quiz Generato
 app.include_router(global_chat_router, prefix="", tags=["Global Chat for Learners"])
 # =============================================================================================
 app.include_router(stream_global_chat_router, prefix="", tags=["Streaming Global Chat for Learners"])
+# =============================================================================================
+app.include_router(upload_file_router, prefix="", tags=["File Uploads for chat sessions"])
 # =============================================================================================
     
 if __name__ == "__main__":

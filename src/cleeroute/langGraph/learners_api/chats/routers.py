@@ -11,7 +11,7 @@ import json
 from fastapi.responses import StreamingResponse
 from datetime import datetime
 # 1. Importations des modèles et du graphe
-from .models import (DeleteResponse, SessionActionResponse, MessageResponse, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, EditMessageRequest, RenameSessionRequest)
+from .models import (DeleteResponse, SessionActionResponse, MessageResponse, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, EditMessageRequest, RenameSessionRequest, FileUploadResponse, FileMetadataResponse, FileContentResponse)
 # from .graph import get_quiz_graph
 
 # Import du sérialiseur que nous utilisons de manière cohérente
@@ -555,49 +555,49 @@ async def rename_chat_session_title(
         raise HTTPException(status_code=500, detail="Failed to rename session.")
 
 
-ingestion_service = FileIngestionService()
+# ingestion_service = FileIngestionService()
 
-# Upload a files (PDF, Docx, Image) to a session and add it to the global context
-@global_chat_router.post("/sessions/{sessionId}/upload")
-async def upload_file_to_session_chat(
-    sessionId: str,
-    file: UploadFile = File(...),
-    db: AsyncConnection = Depends(get_app_db_connection)
-):
-    """
-    Uploads a PDF, Docx, or Image, analyzes it, and stores it in the vector DB for context.
-    """
-    # Vérification Session (Sécurité)
-    cursor = await db.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (sessionId,))
-    if not await cursor.fetchone():
-        raise HTTPException(status_code=404, detail="Session not found")
+# # Upload a files (PDF, Docx, Image) to a session and add it to the global context
+# @global_chat_router.post("/sessions/{sessionId}/upload")
+# async def upload_file_to_session_chat(
+#     sessionId: str,
+#     file: UploadFile = File(...),
+#     db: AsyncConnection = Depends(get_app_db_connection)
+# ):
+#     """
+#     Uploads a PDF, Docx, or Image, analyzes it, and stores it in the vector DB for context.
+#     """
+#     # Vérification Session (Sécurité)
+#     cursor = await db.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (sessionId,))
+#     if not await cursor.fetchone():
+#         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Lecture du fichier en mémoire (Attention aux gros fichiers, limite recommandée côté Nginx/FastAPI)
-    file_bytes = await file.read()
+#     # Lecture du fichier en mémoire (Attention aux gros fichiers, limite recommandée côté Nginx/FastAPI)
+#     file_bytes = await file.read()
     
-    try:
-        # Traitement
-        # Note: Dans un vrai système prod, on mettrait ça dans une BackgroundTask Celery
-        # pour ne pas bloquer, mais ici on attend pour confirmer le succès.
-        chunk_count = await ingestion_service.process_file(
-            session_id=sessionId,
-            filename=file.filename,
-            file_bytes=file_bytes,
-            file_type=file.content_type,
-            db=db
-        )
+#     try:
+#         # Traitement
+#         # Note: Dans un vrai système prod, on mettrait ça dans une BackgroundTask Celery
+#         # pour ne pas bloquer, mais ici on attend pour confirmer le succès.
+#         chunk_count = await ingestion_service.process_file(
+#             session_id=sessionId,
+#             filename=file.filename,
+#             file_bytes=file_bytes,
+#             file_type=file.content_type,
+#             db=db
+#         )
         
-        # Ajout d'un message système dans le chat pour dire que le fichier est prêt
-        await db.execute(
-            "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'system', %s)",
-            (sessionId, f"File '{file.filename}' processed and added to context ({chunk_count} segments).")
-        )
+#         # Ajout d'un message système dans le chat pour dire que le fichier est prêt
+#         await db.execute(
+#             "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'system', %s)",
+#             (sessionId, f"File '{file.filename}' processed and added to context ({chunk_count} segments).")
+#         )
         
-        return {"status": "success", "chunks_added": chunk_count, "filename": file.filename}
+#         return {"status": "success", "chunks_added": chunk_count, "filename": file.filename}
         
-    except Exception as e:
-        print(f"Upload Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+#     except Exception as e:
+#         print(f"Upload Error: {e}")
+#         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
 
  # Streaming Version of the Global Chat
 ingestion_service = FileIngestionService()
@@ -730,3 +730,103 @@ async def ask_in_session_stream(
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
     return StreamingResponse(global_chat_generator(), media_type="text/event-stream")
+
+# Upload files on a session chat
+ingestion_service = FileIngestionService()
+upload_file_router = APIRouter()
+
+@upload_file_router.post("/sessions/{sessionId}/upload", response_model=FileUploadResponse)
+async def upload_file_to_session_chat(
+    sessionId: str,
+    file: UploadFile = File(...),
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """Upload et analyse d'un fichier."""
+    # Check Session
+    cursor = await db.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (sessionId,))
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    file_bytes = await file.read()
+    
+    # Limite 10MB pour éviter crash mémoire (à adapter selon infra)
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (Max 10MB)")
+
+    try:
+        result = await ingestion_service.process_file(
+            session_id=sessionId,
+            filename=file.filename,
+            file_bytes=file_bytes,
+            file_type=file.content_type,
+            db=db
+        )
+        
+        # Notification système dans le chat
+        sys_msg = f"📎 Uploaded '{file.filename}'.\nSummary: {result['summary']}"
+        await db.execute(
+            "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'system', %s)",
+            (sessionId, sys_msg)
+        )
+        
+        return FileUploadResponse(
+            fileId=result["file_id"],
+            filename=result["filename"],
+            summary=result["summary"],
+            status="processed"
+        )
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+# --- 2. LIST (GET) ---
+@upload_file_router.get("/sessions/{sessionId}/files", response_model=List[FileMetadataResponse])
+async def get_session_files(
+    sessionId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """List all files for a specific chat session."""
+    cursor = await db.execute(
+        """
+        SELECT id, filename, file_type, summary, file_size, uploaded_at 
+        FROM knowledge_files WHERE session_id = %s ORDER BY uploaded_at DESC
+        """,
+        (sessionId,)
+    )
+    rows = await cursor.fetchall()
+    
+    files = []
+    for row in rows:
+        # Mapping Tuple -> Objet
+        if isinstance(row, tuple):
+             f_id, f_name, f_type, f_sum, f_size, f_date = row
+        else:
+             f_id, f_name, f_type, f_sum, f_size, f_date = row['id'], row['filename'], row['file_type'], row['summary'], row['file_size'], row['uploaded_at']
+             
+        files.append(FileMetadataResponse(
+            fileId=str(f_id), filename=f_name, fileType=f_type,
+            summary=f_sum or "No summary", fileSize=f_size or 0, uploadedAt=f_date
+        ))
+    return files
+
+
+# --- 3. VIEW CONTENT (GET) ---
+@upload_file_router.get("/files/{fileId}", response_model=FileContentResponse)
+async def get_file_content(
+    fileId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """Get the full extracted content of a specific uploaded file."""
+    cursor = await db.execute("SELECT filename, extracted_text FROM knowledge_files WHERE id = %s", (fileId,))
+    row = await cursor.fetchone()
+    
+    if not row: raise HTTPException(status_code=404, detail="File not found")
+    
+    fname = row[0] if isinstance(row, tuple) else row['filename']
+    content = row[1] if isinstance(row, tuple) else row['extracted_text']
+    
+    return FileContentResponse(
+        fileId=fileId,
+        filename=fname,
+        content=content or ""
+    )

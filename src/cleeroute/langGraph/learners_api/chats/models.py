@@ -194,3 +194,26 @@ class UserProfile(BaseModel):
     industries: str = "General"   # ex: "Tech", "Healthcare"
     motivation: str = "Personal Growth" # ex: "To get a promotion"
     response_style: ResponseStyle = ResponseStyle.CASUAL
+
+# Models for file upload for contextual chat
+class FileUploadResponse(BaseModel):
+    """Réponse après un upload réussi."""
+    fileId: str
+    filename: str
+    summary: str
+    status: str
+
+class FileMetadataResponse(BaseModel):
+    """Pour la liste 'Bibliothèque' dans la sidebar (sans le texte lourd)."""
+    fileId: str
+    filename: str
+    fileType: str
+    summary: Optional[str] = None
+    fileSize: int
+    uploadedAt: datetime
+
+class FileContentResponse(BaseModel):
+    """Pour le 'Viewer' (quand on clique sur un fichier)."""
+    fileId: str
+    filename: str
+    content: str # Le texte brut complet extrait
