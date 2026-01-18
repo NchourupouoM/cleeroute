@@ -26,8 +26,8 @@ if not YOUTUBE_API_KEY:
 
 def get_youtube_service():
     """
-    Crée une NOUVELLE instance du client YouTube pour chaque appel.
-    Ceci est indispensable car google-api-python-client (httplib2) n'est pas thread-safe.
+        Crée une NOUVELLE instance du client YouTube pour chaque appel.
+        Ceci est indispensable car google-api-python-client (httplib2) n'est pas thread-safe.
     """
     return build('youtube', 'v3', developerKey=os.getenv("YOUTUBE_API_KEY"), cache_discovery=False)
 
@@ -102,7 +102,7 @@ async def _fetch_playlist_items(playlist_id: str, max_results: int = 1000) -> Op
             next_page_token = None
             
             # On limite à 2 pages (100 vidéos max) pour la performance, sauf si besoin absolu
-            pages_limit = 2 
+            pages_limit = 4 
             current_page = 0
 
             while True:
@@ -350,26 +350,62 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
         return None
     
 
+# async def fast_search_youtube(user_input: str, language: str, max_results: int = 10) -> List[str]:
+#     """
+#     Returns the top 3 most relevant YouTube playlists for the user's query.
+#     Optimized for speed: reduces API calls and uses a lightweight scoring heuristic.
+#     """
+#     print(f"--- Fast Search: '{user_input}' [{language}] ---")
+#     try:
+#         def search_sync():
+#             service = get_youtube_service()
+#             search_term = f"{user_input} course tutorial"
+#             req = service.search().list(
+#                 q=search_term,
+#                 part="snippet",
+#                 type="playlist",
+#                 maxResults=max_results, 
+#                 relevanceLanguage=language[:2] if len(language) >= 2 else "en"
+#             )
+#             return req.execute()
+
+#         response = await asyncio.to_thread(search_sync)
+#         candidates = []
+#         for item in response.get("items", []):
+#             snippet = item["snippet"]
+#             pid = item["id"]["playlistId"]
+#             score = heuristic_relevance_score(snippet, user_input)
+#             candidates.append((pid, score))
+
+#         candidates.sort(key=lambda x: x[1], reverse=True)
+#         return [c[0] for c in candidates[:5]]  # Return top 5
+
+#     except Exception as e:
+#         print(f"--- Search Error: {e} ---")
+#         return []
+
 async def fast_search_youtube(user_input: str, language: str, max_results: int = 10) -> List[str]:
     """
-    Returns the top 3 most relevant YouTube playlists for the user's query.
-    Optimized for speed: reduces API calls and uses a lightweight scoring heuristic.
+    Recherche YouTube.
+    max_results définit combien de playlists on veut scanner.
     """
-    print(f"--- Fast Search: '{user_input}' [{language}] ---")
+    print(f"--- Fast Search: '{user_input}' ---")
     try:
         def search_sync():
             service = get_youtube_service()
             search_term = f"{user_input} course tutorial"
+            
             req = service.search().list(
                 q=search_term,
                 part="snippet",
                 type="playlist",
-                maxResults=max_results, 
+                maxResults=max_results, # On utilise le paramètre passé
                 relevanceLanguage=language[:2] if len(language) >= 2 else "en"
             )
             return req.execute()
 
         response = await asyncio.to_thread(search_sync)
+        
         candidates = []
         for item in response.get("items", []):
             snippet = item["snippet"]
@@ -377,61 +413,128 @@ async def fast_search_youtube(user_input: str, language: str, max_results: int =
             score = heuristic_relevance_score(snippet, user_input)
             candidates.append((pid, score))
 
+        # Tri et renvoi des IDs
         candidates.sort(key=lambda x: x[1], reverse=True)
-        return [c[0] for c in candidates[:5]]  # Return top 5
+        return [c[0] for c in candidates] # On renvoie TOUT ce qu'on a trouvé (jusqu'à max_results)
 
     except Exception as e:
         print(f"--- Search Error: {e} ---")
         return []
 
+# async def fetch_playlist_light(playlist_input: str, limit: int = None) -> Optional[AnalyzedPlaylist]:
+#     """
+#         Fetches a YouTube playlist with a reduced video limit
+#         Optimized for speed: minimizes API calls and data processing.
+#     """
+#     playlist_id = playlist_input.split("list=")[1].split("&")[0] if "list=" in playlist_input else playlist_input
 
-async def fetch_playlist_light(playlist_input: str, limit: int = 1000) -> Optional[AnalyzedPlaylist]:
+#     try:
+#         def fetch_sync():
+#             service = get_youtube_service()
+#             # Fetch playlist metadata
+#             pl_resp = service.playlists().list(part="snippet", id=playlist_id).execute()
+#             if not pl_resp.get("items"):
+#                 return None
+#             pl_info = pl_resp['items'][0]['snippet']
+
+#             # Fetch playlist items (videos)
+#             vid_req = service.playlistItems().list(
+#                 part="snippet",
+#                 playlistId=playlist_id,
+#                 maxResults=50,
+#             )
+#             vid_resp = vid_req.execute()
+
+#             videos = []
+#             for item in vid_resp.get("items", []):
+#                 snippet = item.get("snippet", {})
+#                 vid_id = snippet.get("resourceId", {}).get("videoId")
+#                 if not vid_id:
+#                     continue
+
+#                 videos.append(VideoInfo(
+#                     title=snippet.get("title", ""),
+#                     description=snippet.get("description", ""),
+#                     video_url=f"https://www.youtube.com/watch?v={vid_id}",
+#                     thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
+#                     channel_title=snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or pl_info.get('channelTitle')
+#                 ))
+
+#             return AnalyzedPlaylist(
+#                 playlist_title=pl_info['title'],
+#                 playlist_url=f"https://www.youtube.com/playlist?list={playlist_id}",
+#                 videos=videos
+#             )
+
+#         return await asyncio.to_thread(fetch_sync)
+
+#     except Exception as e:
+#         print(f"--- Error fetching playlist {playlist_id}: {e} ---")
+#         return None
+
+async def fetch_playlist_light(playlist_input: str, limit: int = None) -> Optional[AnalyzedPlaylist]:
     """
-        Fetches a YouTube playlist with a reduced video limit
-        Optimized for speed: minimizes API calls and data processing.
+    Récupère une playlist.
+    Si limit est None (ou 0), on récupère TOUTES les vidéos de la playlist sans limite.
     """
     playlist_id = playlist_input.split("list=")[1].split("&")[0] if "list=" in playlist_input else playlist_input
 
     try:
         def fetch_sync():
             service = get_youtube_service()
-            # Fetch playlist metadata
+            
+            # 1. Info Playlist
             pl_resp = service.playlists().list(part="snippet", id=playlist_id).execute()
-            if not pl_resp.get("items"):
-                return None
+            if not pl_resp.get("items"): return None
             pl_info = pl_resp['items'][0]['snippet']
+            
+            # 2. Récupération des vidéos (PAGINATION ILLIMITÉE)
+            video_infos = []
+            next_page_token = None
+            
+            while True:
+                # Si une limite est fixée et atteinte, on arrête (pour la recherche auto éventuellement)
+                if limit and len(video_infos) >= limit:
+                    break
 
-            # Fetch playlist items (videos)
-            vid_req = service.playlistItems().list(
-                part="snippet",
-                playlistId=playlist_id,
-                maxResults=limit
-            )
-            vid_resp = vid_req.execute()
+                vid_req = service.playlistItems().list(
+                    part="snippet,contentDetails",
+                    playlistId=playlist_id,
+                    maxResults=50, # Max autorisé par appel API YouTube
+                    pageToken=next_page_token
+                )
+                vid_response = vid_req.execute()
 
-            videos = []
-            for item in vid_resp.get("items", []):
-                snippet = item.get("snippet", {})
-                vid_id = snippet.get("resourceId", {}).get("videoId")
-                if not vid_id:
-                    continue
+                for item in vid_response.get("items", []):
+                    snippet = item.get("snippet", {})
+                    vid_id = snippet.get("resourceId", {}).get("videoId")
+                    
+                    if vid_id:
+                        # Extraction channel title robuste
+                        channel_title = snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or pl_info.get('channelTitle')
+                        
+                        video_infos.append(VideoInfo(
+                            title=snippet.get("title", ""),
+                            description=snippet.get("description", ""),
+                            video_url=f"https://www.youtube.com/watch?v={vid_id}",
+                            thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
+                            channel_title=channel_title
+                        ))
 
-                videos.append(VideoInfo(
-                    title=snippet.get("title", ""),
-                    description=snippet.get("description", ""),
-                    video_url=f"https://www.youtube.com/watch?v={vid_id}",
-                    thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
-                    channel_title=snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or pl_info.get('channelTitle')
-                ))
-
+                # Gestion Pagination
+                next_page_token = vid_response.get('nextPageToken')
+                
+                # S'il n'y a plus de page, on arrête
+                if not next_page_token:
+                    break
+            
             return AnalyzedPlaylist(
                 playlist_title=pl_info['title'],
                 playlist_url=f"https://www.youtube.com/playlist?list={playlist_id}",
-                videos=videos
+                videos=video_infos
             )
 
         return await asyncio.to_thread(fetch_sync)
-
     except Exception as e:
         print(f"--- Error fetching playlist {playlist_id}: {e} ---")
         return None

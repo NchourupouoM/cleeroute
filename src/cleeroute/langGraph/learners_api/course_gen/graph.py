@@ -380,7 +380,7 @@ async def fast_data_collection(state: GraphState) -> dict:
 
         if ids:
             # On récupère les playlists
-            fetch_tasks = [fetch_playlist_light(pid) for pid in ids[:10]]
+            fetch_tasks = [fetch_playlist_light(pid, limit=None) for pid in ids[:10]]
             fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
             
             for res in fetch_results:
