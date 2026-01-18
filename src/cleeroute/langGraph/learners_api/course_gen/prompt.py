@@ -230,15 +230,15 @@ class Prompts:
 
         **Your Core Task:**
         - Build ONE complete, logically structured course blueprint.
-        - Organize ALL playlist videos into coherent sections.
-        - Each section MUST contain **3 to 4 videos**.
+        - Organize ALL playlist videos into coherent sections. You MUST present the videos in the **EXACT SAME CHRONOLOGICAL ORDER** as they appear in the input list. Do not swap, shuffle, or re-sort them.
+        - Each section MUST contain **3 to 5 videos**.
         - ALL videos must be used EXACTLY once.
         - Stopping early is a critical failure.
 
         ---
 
         **Description Constraint (HARD LIMIT):**
-        - Every Description field MUST contain **max 2 short sentences**.
+        - Every Description field MUST contain **max 4 short sentences**.
         - No lists. No explanations.
 
         ---
