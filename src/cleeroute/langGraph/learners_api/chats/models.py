@@ -217,3 +217,8 @@ class FileContentResponse(BaseModel):
     fileId: str
     filename: str
     content: str # Le texte brut complet extrait
+
+class DeleteUploadedFile(BaseModel):
+    status: str
+    deletedCount: int
+    message: str

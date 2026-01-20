@@ -11,7 +11,7 @@ import json
 from fastapi.responses import StreamingResponse
 from datetime import datetime
 # 1. Importations des modèles et du graphe
-from .models import (DeleteResponse, SessionActionResponse, MessageResponse, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, EditMessageRequest, RenameSessionRequest, FileUploadResponse, FileMetadataResponse, FileContentResponse)
+from .models import (DeleteResponse, SessionActionResponse, MessageResponse, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, EditMessageRequest, RenameSessionRequest, FileUploadResponse, FileMetadataResponse, FileContentResponse, DeleteUploadedFile)
 # from .graph import get_quiz_graph
 
 # Import du sérialiseur que nous utilisons de manière cohérente
@@ -741,7 +741,14 @@ async def upload_file_to_session_chat(
     file: UploadFile = File(...),
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
-    """Upload et analyse d'un fichier."""
+    """
+        Upload et analyse d'un fichier.
+        args:
+            sessionId (str): The UUID of the chat session.
+            file (UploadFile): The file to upload (PDF, Docx, Image).
+        returns:
+            FileUploadResponse: Metadata about the uploaded file and processing status.
+    """
     # Check Session
     cursor = await db.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (sessionId,))
     if not await cursor.fetchone():
@@ -776,7 +783,8 @@ async def upload_file_to_session_chat(
             status="processed"
         )
     except Exception as e:
-        print(f"Upload Error: {e}")
+        print(f"Upload Error: {e}")# ... imports (DeleteResponse) ...
+
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 # --- 2. LIST (GET) ---
@@ -785,7 +793,13 @@ async def get_session_files(
     sessionId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
-    """List all files for a specific chat session."""
+    """
+        List all files for a specific chat session.
+        args:
+            sessionId (str): The UUID of the chat session.
+        returns:
+            List[FileMetadataResponse]: Metadata of all uploaded files.
+    """
     cursor = await db.execute(
         """
         SELECT id, filename, file_type, summary, file_size, uploaded_at 
@@ -816,7 +830,13 @@ async def get_file_content(
     fileId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
-    """Get the full extracted content of a specific uploaded file."""
+    """
+        Get the full extracted content of a specific uploaded file.
+        args:
+            fileId (str): The UUID of the uploaded file.
+        returns:
+            FileContentResponse: The filename and full extracted text.
+    """
     cursor = await db.execute("SELECT filename, extracted_text FROM knowledge_files WHERE id = %s", (fileId,))
     row = await cursor.fetchone()
     
@@ -830,3 +850,61 @@ async def get_file_content(
         filename=fname,
         content=content or ""
     )
+
+
+# --- 4. DELETE (DELETE) ---
+@upload_file_router.delete("/sessions/{sessionId}/files/{fileId}", response_model=DeleteResponse)
+async def delete_file_from_session(
+    sessionId: str,
+    fileId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+        **Deletes an uploaded file from the session context.**
+
+        Removes the file content and summary from the database. 
+        args:
+            sessionId (str): The UUID of the chat session.
+            fileId (str): The UUID of the uploaded file.
+        returns:
+            DeleteResponse: Status of the deletion operation.
+    """
+    try:
+        # 1. Suppression avec RETURNING pour récupérer le nom du fichier supprimé
+        # Cela sert aussi de vérification d'existence
+        cursor = await db.execute(
+            """
+            DELETE FROM knowledge_files 
+            WHERE id = %s AND session_id = %s
+            RETURNING filename
+            """,
+            (fileId, sessionId)
+        )
+        row = await cursor.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="File not found or does not belong to this session.")
+            
+        filename = row[0] if isinstance(row, tuple) else row['filename']
+
+        # 2. Ajout d'une notification système dans le chat (Optionnel mais recommandé pour l'UX)
+        # Cela permet à l'utilisateur de voir dans l'historique quand le contexte a changé.
+        await db.execute(
+            """
+            INSERT INTO chat_messages (session_id, sender, content) 
+            VALUES (%s, 'system', %s)
+            """,
+            (sessionId, f"File '{filename}' removed successfully.")
+        )
+
+        return DeleteResponse(
+            status="success",
+            deletedCount=1,
+            message=f"File '{filename}' successfully deleted."
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Delete File Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete file.")
