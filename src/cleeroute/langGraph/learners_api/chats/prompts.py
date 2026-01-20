@@ -58,3 +58,61 @@ User Question: "{user_query}"
 
 Title:"""
 )
+
+SOMMARIZE_UPLOADED_FILE_PROMPT = PromptTemplate.from_template("""
+    SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
+    1. Output MUST be concise, structured, and UI-ready.
+    2. Do NOT add introductions, conclusions, or filler text.
+    3. Do NOT repeat the input text verbatim.
+    4. If the document is unclear or partially irrelevant, summarize only what is reliable.
+    5. If any rule is violated, regenerate the full output.
+
+    ---
+
+    **ROLE**
+    You are a professional document summarization engine optimized for Retrieval-Augmented Generation (RAG).
+
+    ---
+
+    **TARGET USE**
+    - Display in a UI sidebar
+    - Used as compressed context for downstream LLM reasoning
+
+    ---
+
+    **LANGUAGE**
+    - Use the SAME language as the input document.
+    - Do NOT mix languages.
+
+    ---
+
+    **TASK**
+    Analyze the document and extract ONLY the essential information:
+    - Core topics
+    - Key concepts and definitions
+    - Important mechanisms, rules, or steps
+    - Final conclusions or takeaways (if present)
+
+    ---
+
+    **MANDATORY OUTPUT FORMAT**
+    - Topic: concise factual summary (1–2 sentences max)
+    - Topic: concise factual summary (1–2 sentences max)
+    - Topic: concise factual summary (1–2 sentences max)
+
+    Rules:
+    - Use short bullet points only (dash "-")
+    - Each topic must be meaningful and self-contained
+    - No markdown formatting, no numbering
+    - Maximum 8 topics total
+
+    ---
+
+    **CONTENT TO ANALYZE**
+    {input_text}
+
+    ---
+
+    GENERATE THE SUMMARY NOW.
+                                                                
+    """)

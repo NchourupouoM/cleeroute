@@ -554,51 +554,6 @@ async def rename_chat_session_title(
         print(f"Rename Error: {e}")
         raise HTTPException(status_code=500, detail="Failed to rename session.")
 
-
-# ingestion_service = FileIngestionService()
-
-# # Upload a files (PDF, Docx, Image) to a session and add it to the global context
-# @global_chat_router.post("/sessions/{sessionId}/upload")
-# async def upload_file_to_session_chat(
-#     sessionId: str,
-#     file: UploadFile = File(...),
-#     db: AsyncConnection = Depends(get_app_db_connection)
-# ):
-#     """
-#     Uploads a PDF, Docx, or Image, analyzes it, and stores it in the vector DB for context.
-#     """
-#     # Vérification Session (Sécurité)
-#     cursor = await db.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (sessionId,))
-#     if not await cursor.fetchone():
-#         raise HTTPException(status_code=404, detail="Session not found")
-
-#     # Lecture du fichier en mémoire (Attention aux gros fichiers, limite recommandée côté Nginx/FastAPI)
-#     file_bytes = await file.read()
-    
-#     try:
-#         # Traitement
-#         # Note: Dans un vrai système prod, on mettrait ça dans une BackgroundTask Celery
-#         # pour ne pas bloquer, mais ici on attend pour confirmer le succès.
-#         chunk_count = await ingestion_service.process_file(
-#             session_id=sessionId,
-#             filename=file.filename,
-#             file_bytes=file_bytes,
-#             file_type=file.content_type,
-#             db=db
-#         )
-        
-#         # Ajout d'un message système dans le chat pour dire que le fichier est prêt
-#         await db.execute(
-#             "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'system', %s)",
-#             (sessionId, f"File '{file.filename}' processed and added to context ({chunk_count} segments).")
-#         )
-        
-#         return {"status": "success", "chunks_added": chunk_count, "filename": file.filename}
-        
-#     except Exception as e:
-#         print(f"Upload Error: {e}")
-#         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
-
  # Streaming Version of the Global Chat
 ingestion_service = FileIngestionService()
 stream_global_chat_router = APIRouter()
@@ -669,7 +624,12 @@ async def ask_in_session_stream(
                 course_obj = await fetch_course_hierarchy(conn, str(course_id))
                 context_text = extract_context_from_course(course_obj, scope, sec_idx, sub_idx, vid_id)
                 student_quiz_context = await get_student_quiz_context(conn, str(course_id))
-                uploaded_docs_context = await ingestion_service.retrieve_relevant_context(sessionId, conn)
+                uploaded_docs_context = await ingestion_service.retrieve_hybrid_context(
+                    session_id=sessionId, 
+                    query=request.userQuery,
+                    db=conn,
+                    limit=5
+                )
             except Exception as e:
                 print(f"Context Warning: {e}")
                 context_text = ""
@@ -742,11 +702,13 @@ async def upload_file_to_session_chat(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        Upload et analyse d'un fichier.
-        args:
-            sessionId (str): The UUID of the chat session.
-            file (UploadFile): The file to upload (PDF, Docx, Image).
-        returns:
+        Ingest a document into the session context using Hybrid RAG strategy. \n
+        1. Extracts text & Generates Summary (for UI & Context). \n
+        2. Chunks & Vectorizes content (for semantic search). \n
+        args: \n
+            sessionId (str): The UUID of the chat session. \n
+            file (UploadFile): The file to upload (PDF, Docx, Image).\n
+        returns: \n
             FileUploadResponse: Metadata about the uploaded file and processing status.
     """
     # Check Session
@@ -770,7 +732,7 @@ async def upload_file_to_session_chat(
         )
         
         # Notification système dans le chat
-        sys_msg = f"📎 Uploaded '{file.filename}'.\nSummary: {result['summary']}"
+        sys_msg = f"Uploaded '{file.filename}'.\nSummary: {result['summary']}"
         await db.execute(
             "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'system', %s)",
             (sessionId, sys_msg)

@@ -9,20 +9,29 @@ import pdfplumber
 from docx import Document
 from PIL import Image
 
-# LangChain / Google
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
+from src.cleeroute.langGraph.learners_api.chats.prompts import SOMMARIZE_UPLOADED_FILE_PROMPT
 
+# LangChain / Google
+from langchain_core.messages import HumanMessage
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from src.cleeroute.langGraph.learners_api.utils import get_vision_model, get_embedding_model
 # Config
 VISION_MODEL = os.getenv("MODEL_2", "gemini-2.5-flash")
+EMBEDDING_MODEL = "models/text-embedding-004"
+
 
 class FileIngestionService:
     def __init__(self):
         # On utilise un modèle rapide et peu coûteux
-        self.llm = ChatGoogleGenerativeAI(
-            model=VISION_MODEL, 
-            google_api_key=os.getenv("GEMINI_API_KEY"),
-            temperature=0.1
+        self.llm = get_vision_model()
+
+        self.embeddings = get_embedding_model()
+
+        # Découpage intelligent : on essaie de couper aux paragraphes
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000, 
+            chunk_overlap=200,
+            separators=["\n\n", "\n", ". ", " ", ""]
         )
 
     async def _extract_text_from_pdf(self, file_bytes: bytes) -> str:
@@ -79,27 +88,13 @@ class FileIngestionService:
         """
         Génération de résumé ULTRA-CONCISE pour la sidebar UI.
         """
-        if not text or len(text) < 10: return "No content detected."
-        
-        # On limite l'input
-        input_text = text[:15000] 
-        
-        prompt = f"""
-            You are a concise data summarizer for a UI Sidebar.
-            
-            **TASK:** Create a summary of the following content.
-            
-            **CONSTRAINTS (MUST FOLLOW):**
-            1. Output EXACTLY shorts bullet points (using '- ').
-            2. NO introductory phrases (Never say "Here is a summary", "The file contains").
-            3. NO bolding (**text**) or markdown formatting other than the dash.
-            4. Be technical and direct.
-            
-            **CONTENT:**
-            {input_text}
-        """
+        if not text or len(text) < 10: 
+            return "No content detected."
+                
+        chain = SOMMARIZE_UPLOADED_FILE_PROMPT | self.llm
+
         try:
-            res = await self.llm.ainvoke(prompt)
+            res = await chain.ainvoke({"input_text": text})
             # Nettoyage de sécurité post-LLM
             clean_summary = res.content.strip()
             # Si le LLM a mis "Here is...", on le coupe (fallback python)
@@ -130,6 +125,8 @@ class FileIngestionService:
 
             if not extracted_text.strip():
                 raise ValueError("Empty or unreadable file.")
+            
+            summary = await self.generate_summary(extracted_text)
                 
         except Exception as e:
             print(f"Extraction failed for {filename}: {e}")
@@ -148,32 +145,82 @@ class FileIngestionService:
             (file_id, session_id, filename, file_type, extracted_text, summary, len(file_bytes))
         )
 
+        # 4. Chunking & Embedding (Le RAG)
+        chunks = self.text_splitter.split_text(extracted_text)
+
+        if chunks:
+            # Vectorisation par lot (Batch) pour la vitesse
+            # Attention aux limites de quota, on peut faire des mini-batchs si nécessaire
+            vectors = await self.embeddings.aembed_documents(chunks)
+            
+            # Insertion des chunks
+            values = []
+            for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
+                # Préparation pour execute_many ou boucle
+                await db.execute(
+                    """
+                    INSERT INTO knowledge_chunks (file_id, chunk_index, content, embedding)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (file_id, i, chunk, str(vector))
+                )
+
         return {
             "file_id": file_id,
             "filename": filename,
-            "summary": summary
+            "summary": summary,
+            "chunks_count": len(chunks)
         }
+    
 
-    async def retrieve_relevant_context(self, session_id: str, db) -> str:
+    async def retrieve_hybrid_context(self, session_id: str,query: str, db, limit: int = 5) -> str:
         """
-        Récupère TOUT le contenu des fichiers de cette session pour le Chat.
+            Stratégie SOTA : Résumés (Toujours) + Chunks Pertinents (RAG hierarchique).
         """
+
+        # A. Récupérer TOUS les résumés des fichiers de la session
         cursor = await db.execute(
-            "SELECT filename, extracted_text FROM knowledge_files WHERE session_id = %s ORDER BY uploaded_at ASC",
+            "SELECT filename, summary FROM knowledge_files WHERE session_id = %s ORDER BY uploaded_at ASC",
             (session_id,)
         )
         files = await cursor.fetchall()
         
-        if not files: return ""
+        if not files: 
+            return ""
             
-        context = "\n\n=== USER UPLOADED FILES (High Priority) ===\n"
+        context_str = "\n\n=== AVAILABLE DOCUMENTS (SUMMARIES) ===\n"
         for row in files:
             fname = row[0] if isinstance(row, tuple) else row['filename']
-            content = row[1] if isinstance(row, tuple) else row['extracted_text']
+            summ = row[1] if isinstance(row, tuple) else row['summary']
             
-            # Protection contre les anciens fichiers NULL
-            safe_content = content if content else "[No content extracted]"
+            context_str += f"File: {fname}\nSummary: {summ}\n---\n"
+
+        # B. Récupérer les Chunks précis via Vector Search
+        # Si la requête est vide ou triviale (ex: "Bonjour"), on peut skipper ça pour économiser
+        if len(query) > 5:
+            try:
+                query_vector = await self.embeddings.aembed_query(query)
+                
+                cursor = await db.execute(
+                    """
+                    SELECT c.content, f.filename, (c.embedding <=> %s) as distance
+                    FROM knowledge_chunks c
+                    JOIN knowledge_files f ON c.file_id = f.id
+                    WHERE f.session_id = %s
+                    ORDER BY distance ASC
+                    LIMIT %s
+                    """,
+                    (str(query_vector), session_id, limit)
+                )
+                chunks = await cursor.fetchall()
+                
+                if chunks:
+                    context_str += "\n=== RELEVANT DETAILS (RAG) ===\n"
+                    for row in chunks:
+                        content = row[0] if isinstance(row, tuple) else row['content']
+                        fname = row[1] if isinstance(row, tuple) else row['filename']
+                        context_str += f"Source ({fname}): ...{content}...\n"
+            except Exception as e:
+                print(f"RAG Retrieval warning: {e}")
             
-            context += f"\n--- START FILE: {fname} ---\n{safe_content}\n--- END FILE ---\n"
-            
-        return context
+        return context_str
