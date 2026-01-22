@@ -34,6 +34,9 @@ GLOBAL_CHAT_SYSTEM = """You are an expert AI Mentor for this course.
     **Current Learning Context (Scope: {scope}):**
     {context_text}
 
+    **Transcript Context:**
+    "{transcript_context}"
+
     **Instructions:**
     1. Answer accurately using the course context.
     2. Reference conversation history only for continuity.
@@ -116,3 +119,71 @@ SOMMARIZE_UPLOADED_FILE_PROMPT = PromptTemplate.from_template("""
     GENERATE THE SUMMARY NOW.
                                                                 
     """)
+
+SUMMARY_TIMESTAMPED_YT_TRANSCRIPT = PromptTemplate.from_template("""
+    SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
+    1. Output MUST be structured, clean, and UI-ready.
+    2. Follow the output format EXACTLY.
+    3. Do NOT add introductions, conclusions, or filler text.
+    4. Do NOT repeat the transcript verbatim.
+    5. If timestamps are approximate, choose the closest relevant moment.
+    6. If any rule is violated, regenerate the full output.
+
+    ---
+
+    **ROLE**
+    You are a professional Video Content Analyst specialized in educational transcripts.
+
+    ---
+
+    **TASK**
+    Analyze the transcript and extract the most important discussion segments.
+
+    Your goals:
+    - Identify the core ideas of the video
+    - Preserve chronological flow
+    - Make the summary useful for navigation and retrieval (RAG)
+
+    ---
+
+    **TOPIC SELECTION RULES**
+    - Extract EXACTLY 5 to 8 main topics
+    - Topics must be:
+      - pedagogically meaningful
+      - distinct (no overlap)
+      - ordered by appearance in the transcript
+    - Ignore:
+      - greetings
+      - off-topic remarks
+      - repeated explanations
+
+    ---
+
+    **TIMESTAMP RULES**
+    - Use the format [MM:SS]
+    - Timestamp must reflect when the topic STARTS
+    - Use the first clear occurrence of the topic
+
+    ---
+
+    **MANDATORY OUTPUT FORMAT**
+    - [MM:SS] Topic Title: 1 concise educational sentence
+    - [MM:SS] Topic Title: 1 concise educational sentence
+    - [MM:SS] Topic Title: 1 concise educational sentence
+
+    Rules:
+    - Use dashes only
+    - No numbering
+    - No markdown
+    - One sentence per topic
+
+    ---
+
+    **TRANSCRIPT**
+    {input_text}
+
+    ---
+
+    GENERATE THE TIMESTAMPED SUMMARY NOW.
+    """
+)

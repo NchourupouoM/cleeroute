@@ -17,7 +17,8 @@ from .models import (DeleteResponse, SessionActionResponse, MessageResponse, Cha
 # Import du sérialiseur que nous utilisons de manière cohérente
 from src.cleeroute.langGraph.learners_api.course_gen.state import PydanticSerializer
 from src.cleeroute.db.app_db import get_app_db_connection, get_active_pool
-
+from src.cleeroute.langGraph.learners_api.chats.services.tasks import ingest_transcript_by_id_task
+from src.cleeroute.langGraph.learners_api.chats.services.ytbe_transcripts import TranscriptService
 import os
 
 from dotenv import load_dotenv
@@ -567,7 +568,7 @@ async def ask_in_session_stream(
     Version STREAMING du chat global.
     Utilise get_active_pool() pour garantir l'accès à la DB.
     """
-    
+    transcript_service = TranscriptService()
     # 1. Récupération du Pool Global (Assurez-vous que l'app a démarré)
     try:
         pool = get_active_pool()
@@ -630,6 +631,28 @@ async def ask_in_session_stream(
                     db=conn,
                     limit=5
                 )
+                transcript_context = ""
+                # Si le frontend nous indique sur quelle vidéo l'utilisateur se trouve
+                if request.currentSubsectionId:
+                    try:
+                        # A. Sécurité / Fallback
+                        # Si le préchauffage n'a pas fini, on force l'attente ici (Fast-fail)
+                        # C'est rapide si c'est déjà fait grâce au cache SQL interne du service
+                        await transcript_service.ingest_transcript_if_needed(conn, request.currentSubsectionId)
+                        
+                        # B. Récupération sémantique (RAG)
+                        # On récupère le résumé + les passages liés à la question
+                        transcript_context = await transcript_service.retrieve_context(
+                            db=conn,
+                            subsection_id=request.currentSubsectionId,
+                            user_query=request.userQuery,
+                            limit=3
+                        )
+                        print(f"--- [Chat] Injected context for video {request.currentSubsectionId} ---")
+                        
+                    except Exception as e:
+                        print(f"Transcript Dynamic Retrieval Error: {e}")
+
             except Exception as e:
                 print(f"Context Warning: {e}")
                 context_text = ""
@@ -646,7 +669,8 @@ async def ask_in_session_stream(
         "history": langchain_history,
         "user_query": request.userQuery,
         "personalization_block": persona_block,
-        "uploaded_docs_context": uploaded_docs_context
+        "uploaded_docs_context": uploaded_docs_context,
+        "transcript_context": transcript_context
     }
 
     # --- PHASE 3 : GÉNÉRATEUR (Streaming + Écriture) ---
@@ -690,6 +714,37 @@ async def ask_in_session_stream(
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
     return StreamingResponse(global_chat_generator(), media_type="text/event-stream")
+
+@global_chat_router.post("/subsections/{subsectionId}/prepare_transcripts", status_code=202, summary="Pre-heat Video Context")
+async def prepare_video_context(
+    subsectionId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+        Prepare the context for a specific video section.
+        it must be execute when the video is uploaded or when the learner clicks on the video to start watching.
+
+        args:
+            subsectionId (str): The unique UUID of the current video subsession.
+    """
+    try:
+        # 1. Vérification ultra-rapide (Index Scan)
+        cursor = await db.execute("SELECT 1 FROM transcript_summaries WHERE subsection_id = %s", (subsectionId,))
+        exists = await cursor.fetchone()
+        
+        if exists:
+            return {"status": "ready", "message": "Context already available"}
+        
+        # 2. Si pas prêt, on lance Celery (Non-bloquant)
+        ingest_transcript_by_id_task.delay(subsectionId)
+        
+        return {"status": "ingestion_started", "message": "Background processing started"}
+        
+    except Exception as e:
+        # On ne veut pas casser la navigation frontend si ça échoue, on log juste
+        print(f"Pre-heat Error: {e}")
+        return {"status": "error", "message": str(e)}
+    
 
 # Upload files on a session chat
 ingestion_service = FileIngestionService()

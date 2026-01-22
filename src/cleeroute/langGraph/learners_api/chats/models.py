@@ -104,6 +104,20 @@ class MessageResponse(BaseModel):
 class ChatAskRequest(BaseModel):
     """Payload for asking a question in an existing chat session."""
     userQuery: str
+    currentSubsectionId: Optional[str] = Field(
+        None, 
+        description="The UUID of the current subsection for the transcript context injection in the chat."
+    )
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "userQuery": "Explique-moi ce qu'il dit à propos des Hooks.",
+                    "currentSubsectionId": "uuid-de-la-video-en-cours"
+                }
+            ]
+        }
 
     class config:
         json_schema_extra= {

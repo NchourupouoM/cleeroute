@@ -71,5 +71,6 @@ def shutdown_worker(**kwargs):
 
 # Configuration pour trouver les tâches
 celery_app.autodiscover_tasks([
-    "src.cleeroute.langGraph.learners_api.course_gen"
+    "src.cleeroute.langGraph.learners_api.course_gen",
+    "src.cleeroute.langGraph.learners_api.chats.services",
 ])
