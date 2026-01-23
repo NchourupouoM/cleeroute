@@ -28,3 +28,5 @@ pdfplumber
 pypdf
 python-multipart
 Pillow
+azure-storage-blob 
+aiohttp

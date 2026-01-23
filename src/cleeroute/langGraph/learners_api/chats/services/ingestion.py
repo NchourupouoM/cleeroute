@@ -15,7 +15,9 @@ from src.cleeroute.langGraph.learners_api.chats.prompts import SOMMARIZE_UPLOADE
 from langchain_core.messages import HumanMessage
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from src.cleeroute.langGraph.learners_api.utils import get_vision_model, get_embedding_model
-# Config
+
+from src.cleeroute.langGraph.learners_api.chats.services.azure_storage_service import AzureStorageService
+
 VISION_MODEL = os.getenv("MODEL_2", "gemini-2.5-flash")
 EMBEDDING_MODEL = "models/text-embedding-004"
 
@@ -24,8 +26,8 @@ class FileIngestionService:
     def __init__(self):
         # On utilise un modèle rapide et peu coûteux
         self.llm = get_vision_model()
-
         self.embeddings = get_embedding_model()
+        self.azure_service = AzureStorageService()
 
         # Découpage intelligent : on essaie de couper aux paragraphes
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -106,7 +108,24 @@ class FileIngestionService:
             return "Summary unavailable."
 
     async def process_file(self, session_id: str, filename: str, file_bytes: bytes, file_type: str, db) -> Dict[str, Any]:
-        """Orchestre l'extraction et la sauvegarde."""
+        """
+            complete process of ingestion:
+            1. Upload to Azure Storage
+            2. Extract text based on file type
+            3. Generate summary
+            4. Store metadata in DB
+            5. Chunking & Embedding for RAG
+        """
+
+        # 1. UPLOAD SUR AZURE (Nouveau)
+        # On le fait en premier pour sécuriser le fichier binaire
+        try:
+            print(f"--- Uploading {filename} to Azure... ---")
+            storage_path = await self.azure_service.upload_file(file_bytes, filename, session_id)
+        except Exception as e:
+            print(f"Azure Upload Failed: {e}")
+            raise e # Si l'upload échoue, on arrête tout
+
         extracted_text = ""
         
         # 1. Extraction
@@ -139,10 +158,10 @@ class FileIngestionService:
         file_id = str(uuid.uuid4())
         await db.execute(
             """
-            INSERT INTO knowledge_files (id, session_id, filename, file_type, extracted_text, summary, file_size) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO knowledge_files (id, session_id, filename, file_type, extracted_text, summary, file_size, storage_path) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (file_id, session_id, filename, file_type, extracted_text, summary, len(file_bytes))
+            (file_id, session_id, filename, file_type, extracted_text, summary, len(file_bytes), storage_path)
         )
 
         # 4. Chunking & Embedding (Le RAG)

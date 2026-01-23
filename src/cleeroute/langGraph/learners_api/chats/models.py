@@ -216,7 +216,7 @@ class FileUploadResponse(BaseModel):
     filename: str
     summary: str
     status: str
-
+    
 class FileMetadataResponse(BaseModel):
     """Pour la liste 'Bibliothèque' dans la sidebar (sans le texte lourd)."""
     fileId: str
@@ -225,12 +225,14 @@ class FileMetadataResponse(BaseModel):
     summary: Optional[str] = None
     fileSize: int
     uploadedAt: datetime
+    viewUrl: Optional[HttpUrl] = None #L'URL temporaire pour l'affichage (valide 2h)
 
 class FileContentResponse(BaseModel):
     """Pour le 'Viewer' (quand on clique sur un fichier)."""
     fileId: str
     filename: str
     content: str # Le texte brut complet extrait
+    viewUrl: Optional[str] = None # URL Fichier original (Vue Humaine)
 
 class DeleteUploadedFile(BaseModel):
     status: str

@@ -34,6 +34,7 @@ from .course_context_for_global_chat import get_student_quiz_context, extract_co
 
 from src.cleeroute.langGraph.learners_api.chats.services.ingestion import FileIngestionService
 from src.cleeroute.langGraph.learners_api.utils import get_llm
+from src.cleeroute.langGraph.learners_api.chats.services.azure_storage_service import AzureStorageService
 
 qa_llm = get_llm(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -310,13 +311,15 @@ async def delete_a_chat_session(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    **Deletes a specific chat session and all its messages.**
+    **Deletes a specific chat session and all its messages.**\n
 
     This action is irreversible. Thanks to the database schema (ON DELETE CASCADE),
-    all associated messages and file references (RAG) will be automatically cleaned up.
+    all associated messages and file references (RAG) will be automatically cleaned up.\n
 
-    Args:
-        sessionId (str): The UUID of the session to delete.
+    Args:\n
+        sessionId (str): The UUID of the session to delete.\n
+    returns:\n
+        SessionActionResponse: Status of the deletion operation.
     """
     try:
         # On utilise RETURNING pour vérifier si la ligne existait vraiment
@@ -347,10 +350,14 @@ async def delete_all_course_chat_sessions(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    **Deletes ALL chat sessions associated with a specific course.**
+    **Deletes ALL chat sessions associated with a specific course.**\n
     
     This is a destructive action used to "reset" the chat history for a course.
-    All messages and file references to the course are also removed.
+    All messages and file references to the course are also removed.\n
+    Args:\n
+        courseId (str): The UUID of the course whose sessions are to be deleted.
+    returns:\n
+        DeleteResponse: Status of the deletion operation.
     """
     try:
         # On supprime toutes les sessions liées au cours
@@ -387,9 +394,14 @@ async def delete_a_message_in_a_session(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    **Deletes a message and all subsequent messages in the thread.**
+    **Deletes a message and all subsequent messages in the thread.**\n
     
-    This is equivalent to "Rewinding" the conversation to the point just before this message.
+    This is equivalent to "Rewinding" the conversation to the point just before this message.\n
+    Args:\n
+        sessionId (str): The UUID of the chat session.\n
+        messageId (str): The UUID of the message to delete.\n
+    returns:\n
+        DeleteResponse: The count of deleted messages.
     """
     try:
         # 1. Récupérer le timestamp
@@ -442,13 +454,20 @@ async def edit_message_and_truncate(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    **Edits a specific message and deletes all subsequent messages.**
+    **Edits a specific message and deletes all subsequent messages.** \n
     
     This allows the user to "branch" the conversation. By changing a past question,
-    the old AI response and following conversation become invalid and are removed.
+    the old AI response and following conversation become invalid and are removed.\n
     
     The frontend should typically trigger a new `/ask` or `/stream` call immediately 
-    after this returns, to generate the new AI response.
+    after this returns, to generate the new AI response. \n
+
+    args:\n
+        sessionId (str): The UUID of the chat session.\n
+        messageId (str): The UUID of the message to edit.\n
+        request (EditMessageRequest): Contains the new content for the message.\n
+    returns:\n
+        MessageResponse: The updated message details.
     """
     os.environ['GEMINI_API_KEY'] = x_gemini_api_key if x_gemini_api_key else os.getenv("GEMINI_API_KEY")
     try:
@@ -510,14 +529,14 @@ async def rename_chat_session_title(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-    **Updates the title of a specific chat session.**
+    **Updates the title of a specific chat session.**\n
 
     Useful if the user wants to organize their chats or if the auto-generated title
-    was not accurate enough.
+    was not accurate enough.\n
 
-    Args:
-        sessionId (str): The UUID of the session.
-        request (RenameSessionRequest): Contains the new title.
+    Args:\n
+        sessionId (str): The UUID of the session.\n
+        request (RenameSessionRequest): Contains the new title.\n
     """
     try:
         # Mise à jour du titre et de la date de modification
@@ -565,8 +584,11 @@ async def ask_in_session_stream(
     userId: str = Header(..., alias="userId"),
 ):
     """
-    Version STREAMING du chat global.
-    Utilise get_active_pool() pour garantir l'accès à la DB.
+    Streaming version of global chat.\\n
+    args:
+        sessionId (str): The unique UUID of the chat session.\\n
+        request (ChatAskRequest): The user's text query.\\n
+        userId (str): The unique UUID of the user (from header).\\n
     """
     transcript_service = TranscriptService()
     # 1. Récupération du Pool Global (Assurez-vous que l'app a démarré)
@@ -721,10 +743,10 @@ async def prepare_video_context(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        Prepare the context for a specific video section.
-        it must be execute when the video is uploaded or when the learner clicks on the video to start watching.
+        Prepare the context for a specific video section.\n
+        it must be execute when the video is uploaded or when the learner clicks on the video to start watching.\n
 
-        args:
+        args:\n
             subsectionId (str): The unique UUID of the current video subsession.
     """
     try:
@@ -759,7 +781,8 @@ async def upload_file_to_session_chat(
     """
         Ingest a document into the session context using Hybrid RAG strategy. \n
         1. Extracts text & Generates Summary (for UI & Context). \n
-        2. Chunks & Vectorizes content (for semantic search). \n
+        2. Stores file in Azure Blob Storage. \n
+        3. Chunks & Vectorizes content (for semantic search). \n
         args: \n
             sessionId (str): The UUID of the chat session. \n
             file (UploadFile): The file to upload (PDF, Docx, Image).\n
@@ -787,7 +810,7 @@ async def upload_file_to_session_chat(
         )
         
         # Notification système dans le chat
-        sys_msg = f"Uploaded '{file.filename}'.\nSummary: {result['summary']}"
+        sys_msg = f"Summary: {result['summary']}"
         await db.execute(
             "INSERT INTO chat_messages (session_id, sender, content) VALUES (%s, 'system', %s)",
             (sessionId, sys_msg)
@@ -805,40 +828,53 @@ async def upload_file_to_session_chat(
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 # --- 2. LIST (GET) ---
+azure_service = AzureStorageService()
 @upload_file_router.get("/sessions/{sessionId}/files", response_model=List[FileMetadataResponse])
 async def get_session_files(
     sessionId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        List all files for a specific chat session.
-        args:
-            sessionId (str): The UUID of the chat session.
-        returns:
+        List all files for a specific chat session. \n
+        args: \n
+            sessionId (str): The UUID of the chat session. \n
+        returns: \n
             List[FileMetadataResponse]: Metadata of all uploaded files.
     """
-    cursor = await db.execute(
-        """
-        SELECT id, filename, file_type, summary, file_size, uploaded_at 
-        FROM knowledge_files WHERE session_id = %s ORDER BY uploaded_at DESC
-        """,
-        (sessionId,)
-    )
-    rows = await cursor.fetchall()
-    
-    files = []
-    for row in rows:
-        # Mapping Tuple -> Objet
-        if isinstance(row, tuple):
-             f_id, f_name, f_type, f_sum, f_size, f_date = row
-        else:
-             f_id, f_name, f_type, f_sum, f_size, f_date = row['id'], row['filename'], row['file_type'], row['summary'], row['file_size'], row['uploaded_at']
-             
-        files.append(FileMetadataResponse(
-            fileId=str(f_id), filename=f_name, fileType=f_type,
-            summary=f_sum or "No summary", fileSize=f_size or 0, uploadedAt=f_date
-        ))
-    return files
+    try:
+        cursor = await db.execute(
+            """
+            SELECT id, filename, file_type, summary, file_size, uploaded_at, storage_path 
+            FROM knowledge_files WHERE session_id = %s ORDER BY uploaded_at DESC
+            """,
+            (sessionId,)
+        )
+        rows = await cursor.fetchall()
+
+        files = []
+        for row in rows:
+            # Mapping Tuple -> Objet
+            if isinstance(row, tuple):
+                 f_id, f_name, f_type, f_sum, f_size, f_date, f_path = row
+            else:
+                 f_id, f_name, f_type, f_sum, f_size, f_date, f_path = row['id'], row['filename'], row['file_type'], row['summary'], row['file_size'], row['uploaded_at'], row['storage_path']
+
+            # Génération de l'URL SAS à la volée
+            sas_url = azure_service.generate_sas_url(f_path) if f_path else None
+
+            files.append(FileMetadataResponse(
+                fileId=str(f_id), 
+                filename=f_name, 
+                fileType=f_type,
+                summary=f_sum or "No summary", 
+                fileSize=f_size or 0, 
+                uploadedAt=f_date,
+                viewUrl=sas_url
+            ))
+        return files
+    except Exception as e:
+        print(f"List Files Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve files list")
 
 
 # --- 3. VIEW CONTENT (GET) ---
@@ -848,24 +884,31 @@ async def get_file_content(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        Get the full extracted content of a specific uploaded file.
-        args:
-            fileId (str): The UUID of the uploaded file.
-        returns:
+        Get the full extracted content of a specific uploaded file.\n
+        args:\n
+            fileId (str): The UUID of the uploaded file.\n
+        returns:\n
             FileContentResponse: The filename and full extracted text.
     """
-    cursor = await db.execute("SELECT filename, extracted_text FROM knowledge_files WHERE id = %s", (fileId,))
+    cursor = await db.execute("SELECT filename, extracted_text, storage_path FROM knowledge_files WHERE id = %s", (fileId,))
     row = await cursor.fetchone()
     
-    if not row: raise HTTPException(status_code=404, detail="File not found")
+    if not row: 
+        raise HTTPException(status_code=404, detail="File not found")
     
     fname = row[0] if isinstance(row, tuple) else row['filename']
     content = row[1] if isinstance(row, tuple) else row['extracted_text']
+    storage_path = row[2] if isinstance(row, tuple) else row['storage_path']
+
+    # Génération URL SAS
+    sas_url = azure_service.generate_sas_url(storage_path) if storage_path else None
+
     
     return FileContentResponse(
         fileId=fileId,
         filename=fname,
-        content=content or ""
+        content=content or "",
+        viewUrl=sas_url
     )
 
 
@@ -877,13 +920,13 @@ async def delete_file_from_session(
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
     """
-        **Deletes an uploaded file from the session context.**
+        **Deletes an uploaded file from the session context.**\n
 
-        Removes the file content and summary from the database. 
-        args:
-            sessionId (str): The UUID of the chat session.
-            fileId (str): The UUID of the uploaded file.
-        returns:
+        Removes the file content and summary from the database. \n
+        args:\n
+            sessionId (str): The UUID of the chat session.\n
+            fileId (str): The UUID of the uploaded file.\n
+        returns:\n
             DeleteResponse: Status of the deletion operation.
     """
     try:
