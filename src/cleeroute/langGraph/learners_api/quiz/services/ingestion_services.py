@@ -105,3 +105,25 @@ class FileIngestionService:
             context_str += f"\n--- END OF FILE: {fname} ---\n"
             
         return context_str
+    
+
+
+STREAM_DOCS = """
+    **Streams the AI response using Server-Sent Events (SSE).**
+
+    **Protocol:**
+    - Content-Type: `text/event-stream`
+    - The client will receive a stream of JSON objects prefixed by `data: `.
+
+    **Event Types:**
+    1. **Token:** `data: {"type": "token", "content": "Word"}`
+       - Appends text to the AI's message bubble in real-time.
+    2. **End:** `data: {"type": "end", "chatHistory": "...", "userAnswers": {...}}`
+       - Signals the end of generation.
+       - Contains the updated source-of-truth state to synchronize the client.
+    3. **Error:** `data: {"type": "error", "content": "..."}`
+
+    **Args:**
+    - `attemptId`: The UUID of the current session.
+    - Payload (Body): Specific to the action (Answer, Skip, Ask...).
+    """

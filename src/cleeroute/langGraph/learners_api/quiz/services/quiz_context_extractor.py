@@ -1,114 +1,91 @@
 from psycopg.connection_async import AsyncConnection
-from fastapi import HTTPException, Depends
-from src.cleeroute.db.app_db import get_app_db_connection
-
+from src.cleeroute.langGraph.learners_api.chats.course_context_for_global_chat import fetch_course_hierarchy
 
 async def build_quiz_context_from_db(
-    scope: str, 
-    course_id: str,
     db: AsyncConnection, 
+    scope: str, 
+    course_id: str, 
     section_id: str = None, 
     subsection_id: str = None
 ) -> str:
     """
-    Récupère le contenu textuel pertinent depuis la BDD pour générer le quiz.
+    Construit le contexte pour le Quiz selon la stratégie 'Global Summary + Local Deep Dive'.
+    
+    1. Structure du cours (Titres).
+    2. Résumés de TOUTES les vidéos du cours (Contexte Global).
+    3. Transcript INTÉGRAL de la vidéo courante (si applicable).
     """
     context_text = ""
 
     try:
-        # --- CAS 1 : SCOPE = SUBSECTION (ou VIDEO) ---
-        # C'est le plus granulaire : on récupère le contenu précis de la sous-section.
-        if scope in ["subsection", "video"]:
-            if not subsection_id:
-                raise ValueError("subsectionId is required for subsection/video scope")
-            
+        # --- 1. STRUCTURE & INTRO (Métadonnées) ---
+        course_obj = await fetch_course_hierarchy(db, course_id)
+        context_text += f"=== COURSE OVERVIEW ===\nTitle: {course_obj.title}\nIntroduction: {course_obj.introduction}\n"
+
+        # --- 2. CONTEXTE GLOBAL (Résumés de TOUTES les vidéos) ---
+        # Peu importe le scope, on veut que l'IA connaisse tout le programme.
+        # On joint pour récupérer les résumés liés à ce cours.
+        cursor = await db.execute(
+            """
+            SELECT sec.title AS section_title, sub.title AS video_title, ts.summary_text
+            FROM transcript_summaries ts
+            JOIN subsection sub ON ts.subsection_id = sub.id
+            JOIN section sec ON sub.section_id = sec.id
+            WHERE sec.course_id = %s
+            ORDER BY sec.position, sub.position
+            """,
+            (course_id,)
+        )
+        all_summaries = await cursor.fetchall()
+        
+        if all_summaries:
+            context_text += "\n=== GLOBAL VIDEO SUMMARIES (All Modules) ===\n"
+            current_sec = ""
+            for row in all_summaries:
+                # Gestion Tuple vs Dict
+                if isinstance(row, tuple):
+                    sec_title, vid_title, summary = row
+                else:
+                    sec_title, vid_title, summary = row['section_title'], row['video_title'], row['summary_text']
+                
+                # Organisation visuelle par section
+                if sec_title != current_sec:
+                    context_text += f"\n-- MODULE: {sec_title} --\n"
+                    current_sec = sec_title
+                
+                context_text += f"Video '{vid_title}': {summary}\n"
+        else:
+            context_text += "\n(No video summaries available yet. The course might be new.)\n"
+
+        # --- 3. CONTEXTE LOCAL (Transcript COMPLET de la vidéo active) ---
+        # Si l'utilisateur est sur une vidéo précise, on veut que le quiz soit très précis dessus.
+        if subsection_id:
+            # On récupère tous les chunks de texte de cette vidéo et on les recolle
             cursor = await db.execute(
                 """
-                SELECT title
-                FROM subsection 
-                WHERE id = %s
+                SELECT content 
+                FROM transcript_chunks 
+                WHERE subsection_id = %s 
+                ORDER BY chunk_index ASC
                 """,
                 (subsection_id,)
             )
-            row = await cursor.fetchone()
-            if not row:
-                raise ValueError("Subsection not found")
+            chunks = await cursor.fetchall()
             
-            # Gestion tuple/dict selon le driver
-            title = row[0] if isinstance(row, tuple) else row['title']
-            # content = row[1] if isinstance(row, tuple) else row['content'] # Contenu (transcript de la video, résumé)
-            # desc = row[2] if isinstance(row, tuple) else row['description']
-            
-            context_text = f"FOCUS TOPIC: {title}\n"
-            # context_text += f"DETAILS:\n{content or desc or 'No detailed content available.'}"
-            # context_text += f"DETAILS:\n{desc or 'No detailed content available.'}"
+            if chunks:
+                full_transcript = " ".join([c[0] if isinstance(c, tuple) else c['content'] for c in chunks])
+                
+                # On ajoute ce gros bloc de texte avec une instruction de priorité
+                context_text += f"\n\n=== 🎯 CURRENT VIDEO FULL TRANSCRIPT (High Priority) ===\n"
+                context_text += f"Use the specific details below to generate precise questions for this video:\n\n"
+                context_text += full_transcript
+            else:
+                # Fallback: Si pas de chunks, on vérifie si un résumé existe dans la liste globale (déjà ajouté plus haut)
+                context_text += "\n(Full transcript not processed yet for this video. Using summary above.)\n"
 
-        # --- CAS 2 : SCOPE = SECTION ---
-        # On récupère le titre/desc de la section + les résumés de toutes ses sous-sections.
-        elif scope == "section":
-            if not section_id:
-                raise ValueError("sectionId is required for section scope")
-            
-            # 1. Info de la Section
-            cursor = await db.execute(
-                "SELECT title, description FROM section WHERE id = %s",
-                (section_id,)
-            )
-            sec_row = await cursor.fetchone()
-            if not sec_row: raise ValueError("Section not found")
-            
-            s_title = sec_row[0] if isinstance(sec_row, tuple) else sec_row['title']
-            # s_desc = sec_row[1] if isinstance(sec_row, tuple) else sec_row['description']
-            
-            context_text += f"MODULE: {s_title}"
-            
-            # 2. Contenu des sous-sections
-            cursor = await db.execute(
-                "SELECT title FROM subsection WHERE section_id = %s ORDER BY position ASC",
-                (section_id,)
-            )
-            rows = await cursor.fetchall()
-            for row in rows:
-                sub_title = row[0] if isinstance(row, tuple) else row['title']
-                # sub_content = row[1] if isinstance(row, tuple) else row['content']
-                # On limite la taille du contenu pour ne pas exploser le contexte si la section est longue
-                # summary = (sub_content[:500] + "...") if sub_content and len(sub_content) > 500 else (sub_content or "")
-                context_text += f"- {sub_title}\n"
-
-        # --- CAS 3 : SCOPE = COURSE (Défaut) ---
-        # On récupère l'intro du cours + la liste de toutes les sections et leurs descriptions.
-        else: # scope == "course"
-            cursor = await db.execute(
-                "SELECT title, description FROM course WHERE id = %s",
-                (course_id,)
-            )
-            course_row = await cursor.fetchone()
-            if not course_row: raise ValueError("Course not found")
-            
-            c_title = course_row[0] if isinstance(course_row, tuple) else course_row['title']
-            c_desc = course_row[1] if isinstance(course_row, tuple) else course_row['description']
-            
-            context_text += f"COURSE TITLE: {c_title}\nINTRODUCTION: {c_desc}\n\nCOURSE MODULES:\n"
-            
-            # 2. Liste des Sections
-            cursor = await db.execute(
-                "SELECT title FROM section WHERE course_id = %s ORDER BY position ASC",
-                (course_id,)
-            )
-            rows = await cursor.fetchall()
-            for row in rows:
-                sec_title = row[0] if isinstance(row, tuple) else row['title']
-                # sec_desc = row[1] if isinstance(row, tuple) else row['description']
-                context_text += f"- Module: {sec_title}"
-
-        if not context_text.strip():
-            return "No content found for this context."
-        
-        # print(f"Built quiz context (scope={scope}): {context_text[:200]}...")
-        print(f"Built quiz context (scope={scope}): {context_text}")
         return context_text
 
     except Exception as e:
-        print(f"Error building quiz context: {e}")
-        # En cas d'erreur DB, on renvoie une chaine vide pour ne pas faire planter l'API 
-        return ""
+        print(f"Error building rich quiz context: {e}")
+        # En cas d'erreur SQL, on renvoie au moins le titre pour ne pas crash
+        return f"Course: {course_obj.title} (Detailed context unavailable due to error)"

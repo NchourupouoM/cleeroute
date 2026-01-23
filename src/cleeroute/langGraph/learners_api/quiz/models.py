@@ -45,7 +45,7 @@ class QuizContent(BaseModel):
 class ChatMessage(BaseModel):
     """Représente un seul message dans l'historique de la conversation."""
     id: str = Field(..., description="Identifiant unique du message (ex: 'chat_msg_001').")
-    sender: Literal["user", "ai"] = Field(..., description="Qui a envoyé le message.")
+    sender: Literal["user", "ai","system", "context"] = Field(..., description="Qui a envoyé le message.")
     content: str = Field(..., description="Le contenu textuel du message.")
     isCorrect: Optional[bool] = Field(None, description="Pour les réponses de l'IA, indique si la réponse de l'utilisateur était correcte.")
     type: Optional[str] = Field(None, description="Un type spécial pour certains messages de l'IA, ex: 'recap'.")
@@ -179,10 +179,30 @@ class QuizGraphState(TypedDict):
 
     user_profile: str 
 
+class QuizStateResponse(BaseModel):
+    """
+    Modèle complet pour recharger un quiz existant (Resume).
+    """
+    attemptId: str
+    title: str
+    status: str
+    # Le contexte initial (ce que l'utilisateur voulait apprendre)
+    originalIntent: Optional[str] = None 
+    
+    questions: List[QuizQuestion] # Sans les réponses secrètes (pour le frontend)
+    
+    # État actuel
+    userAnswers: Dict[str, Any] # { "q1": {"answerIndex": 1, "isCorrect": false}, ... }
+    chatHistory: List[ChatMessage]
+    
+    stats: Optional[QuizStats] = None
 
+class QuizQuestionInternal(QuizQuestion):
+    """Modèle interne (stocké en BDD/Graph). Contient la solution."""
+    correctAnswerIndex: int
+    explanation: str
 
 # Model for libre QA 
-
 class CourseAskRequest(BaseModel):
     """
     Requête pour poser une question libre sur le contenu du cours.
