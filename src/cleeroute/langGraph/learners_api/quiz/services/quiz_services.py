@@ -44,6 +44,8 @@ async def get_quiz_state_from_db(attempt_id: str, db: AsyncConnection) -> Option
             QuizQuestion(
                 questionId=q.get("questionId"),
                 questionText=q.get("questionText"),
+                responseIndex=q.get("responseIndex"),
+                correctAnswerIndex=q.get("correctAnswerIndex"),
                 options=q.get("options")
             ) for q in questions_data
         ]

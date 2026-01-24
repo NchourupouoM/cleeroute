@@ -256,7 +256,15 @@ async def start_quiz_attempt(
         raise HTTPException(500, "Failed to save quiz")
 
     # Retour Public (Sans les réponses)
-    questions_public = [QuizQuestion(**q.model_dump()) for q in questions_internal]
+    # questions_public = [QuizQuestion(**q.model_dump()) for q in questions_internal]
+    questions_public = []
+    for q in questions_internal:
+        questions_public.append(QuizQuestion(
+            questionId=q.questionId,
+            questionText=q.questionText,
+            correctAnswerIndex=q.correctAnswerIndex,
+            options=q.options,
+        ))
     
     return QuizAttemptResponse(
         attemptId=attempt_id,

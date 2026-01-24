@@ -14,6 +14,7 @@ class QuizQuestion(BaseModel):
     """Représente une seule question du quiz telle qu'elle est envoyée au frontend."""
     questionId: str = Field(..., description="Identifiant unique de la question (ex: 'q_uuid_01').")
     questionText: str = Field(..., description="Le texte complet de la question.")
+    correctAnswerIndex: Optional[int] = Field(None, description="L'index (0, 1, 2, 3) de la bonne réponse.")
     options: List[str] = Field(..., description="Une liste de chaînes de caractères pour les options de réponse.")
 
 class QuizQuestionInternal(QuizQuestion):
@@ -21,10 +22,7 @@ class QuizQuestionInternal(QuizQuestion):
     Modèle interne qui étend QuizQuestion avec des informations sensibles
     qui NE SERONT PAS envoyées au frontend.
     """
-    correctAnswerIndex: int = Field(
-        ..., 
-        description="L'index (0, 1, 2, 3) de la bonne réponse dans la liste 'options'."
-    )
+    correctAnswerIndex: int = Field(..., description="L'index (0, 1, 2, 3) de la bonne réponse.")
     explanation: str = Field(
         ..., 
         description="Une brève explication de pourquoi la réponse est correcte."
