@@ -80,7 +80,7 @@ async def stream_graph_execution(graph, input_state, config):
         is_finished = current_snapshot.values.get("is_conversation_finished", False)
 
     end_payload = {"is_conversation_finished": is_finished}
-    yield json.dumps({"event": "end", "data": end_payload}) + "\n"
+    yield json.dumps({"event": "status", "data": end_payload}) + "\n"
 
 
 @stream_syllabus_router.post("/stream_gen_syllabus", status_code=201)
