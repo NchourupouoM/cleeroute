@@ -692,7 +692,8 @@ async def ask_in_session_stream(
         "user_query": request.userQuery,
         "personalization_block": persona_block,
         "uploaded_docs_context": uploaded_docs_context,
-        "transcript_context": transcript_context
+        "transcript_context": transcript_context,
+        "language": profile.language
     }
 
     # --- PHASE 3 : GÉNÉRATEUR (Streaming + Écriture) ---
