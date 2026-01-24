@@ -30,49 +30,57 @@ import json
 stream_syllabus_router = APIRouter()
 
 #  same APIs with streaming integrate
-
 async def stream_graph_execution(graph, input_state, config):
     thread_id = config["configurable"]["thread_id"]
-
-    # 1. Envoi des métadonnées initiales
     yield json.dumps({"event": "metadata", "data": {"thread_id": thread_id}}) + "\n"
 
-    # 2. Streaming des tokens (Contenu).
+    # Variable tampon pour gérer le découpage du tag
+    buffer = ""
+    tag = "[CONVERSATION_FINISHED]"
+    
     async for event in graph.astream_events(input_state, config, version="v2"):
-        
         kind = event["event"]
         
-        # Avec v2, on s'assure de ne prendre que les événements de streaming du modèle
         if kind == "on_chat_model_stream":
-            # Dans v2, la structure peut être légèrement différente, mais généralement:
             chunk = event["data"]["chunk"]
-            
-            # Vérification de sécurité pour le contenu
             content = chunk.content if hasattr(chunk, "content") else str(chunk)
             
             if content:
-                # 🔹 NETTOYAGE : ne jamais afficher le token de contrôle [CONVERSATION_FINISHED]
-                clean_content = content.replace("[CONVERSATION_FINISHED]", "").strip()
+                # 1. On ajoute au tampon
+                buffer += content
 
-                if clean_content:
-                    yield json.dumps({"event": "token", "data": clean_content}) + "\n"
-    
-    # 3.Récupération et envoi de l'état final (Finished ou pas ?)
-    # Une fois la boucle terminée, le graphe a fini son exécution pour ce tour.
-    # On récupère l'état sauvegardé dans le checkpointer.
+                # 2. Vérification : Est-ce qu'on a le tag complet ou une partie ?
+                if tag in buffer:
+                    # Le tag est détecté ! On le supprime et on envoie le reste
+                    clean_content = buffer.replace(tag, "").strip()
+                    buffer = "" # On vide le buffer
+                    if clean_content:
+                        yield json.dumps({"event": "token", "data": clean_content}) + "\n"
+                
+                # 3. Si le buffer commence par '[', on attend (c'est peut-être le début du tag)
+                # Mais on ne doit pas attendre indéfiniment si ce n'est pas le tag (ex: "[Note: ...]")
+                elif buffer.startswith("[") and len(buffer) < len(tag) + 5:
+                    continue # On garde en mémoire, on n'envoie pas encore
+                
+                # 4. Sinon, on envoie tout le buffer et on le vide
+                else:
+                    yield json.dumps({"event": "token", "data": buffer}) + "\n"
+                    buffer = ""
+
+    # S'il reste quelque chose dans le buffer à la fin (rare), on l'envoie
+    if buffer:
+        clean_content = buffer.replace(tag, "").strip()
+        if clean_content:
+             yield json.dumps({"event": "token", "data": clean_content}) + "\n"
+
+    # (Suite : Récupération état final et envoi event 'end')
     current_snapshot = await graph.aget_state(config)
-    
     is_finished = False
     if current_snapshot and current_snapshot.values:
-        # On récupère la valeur calculée par le nœud 'intelligent_conversation'
         is_finished = current_snapshot.values.get("is_conversation_finished", False)
 
-    # 4. Envoi de l'événement de fin avec le statut
-    end_payload = {
-        "is_conversation_finished": is_finished
-    }
-    yield json.dumps({"event": "status", "data": end_payload}) + "\n"
-
+    end_payload = {"is_conversation_finished": is_finished}
+    yield json.dumps({"event": "end", "data": end_payload}) + "\n"
 
 
 @stream_syllabus_router.post("/stream_gen_syllabus", status_code=201)

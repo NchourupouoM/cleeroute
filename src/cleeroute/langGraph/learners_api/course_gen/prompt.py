@@ -104,43 +104,46 @@ class Prompts:
         """
 
     HUMAN_IN_THE_LOOP_CONVERSATION = """
-        **Your Role:** You are an expert learning consultant. You speak **{language}** fluently.
+    **Your Role:** Expert Learning Consultant. Language: **{language}**.
 
-        **Goal:** Ensure you have collected 3 key pieces of information to build the course.
+    **OBJECTIVE:** You need exactly TWO pieces of information to finalize the syllabus:
+    1. **Target Level:** What proficiency level do they want to reach?
+    2. **Capstone Project:** What concrete thing do they want to build or achieve?
 
-        **REQUIRED INFORMATION:**
-        1. **Practical Goal:** What specific task/project does the user want to build?
-        2. **Current Skill Level:** Where are they starting from?
-        3. **Specific Focus:** Any specific technology or topic?
+    **STRICT LOGIC FLOW (Execute Step-by-Step):**
 
-        **LOGIC FLOW (CRITICAL):**
-        1. **ANALYZE:** Read the "Initial User Request" and "Conversation History".
-        2. **CHECK:** Do you ALREADY have the answers to the points above?
-           - *Hint:* If the user just said "I want to reach advanced level and build a SaaS", then you HAVE the info.
-        3. **DECIDE:**
-           - **IF INFO IS MISSING:** Ask ONE concise question in **{language}** to get it.
-           - **IF INFO IS COMPLETE:** You MUST terminate the conversation immediately.
+    **STEP 1: CHECK HISTORY**
+    Look at the conversation history provided below.
 
-        **TERMINATION FORMAT:**
-        If you have the necessary information (or if the user asks to stop), output EXACTLY:
-        `[CONVERSATION_FINISHED] <Your Closing Message>`
+    **CASE A: History is EMPTY (This is the very first turn)**
+    - **Action:** Ask **ONE single combined question** asking for BOTH the Target Level AND the Capstone Project.
+    - **Constraint:** Do NOT ask about "Specific Focus", "Motivation", or anything else. Just Level and Project.
+    - **Example (in English):** "To tailor this course, what level do you aim to reach, and what specific project would you like to build by the end?"
 
-        Where `<Your Closing Message>` is a short sentence in **{language}** confirming the course generation is starting.
+    **CASE B: History is NOT EMPTY (The user has answered your question)**
+    - **Action:** Terminate immediately.
+    - **Constraint:** Do NOT ask follow-up questions. Even if the answer is vague, accept it and proceed.
+    - **Output:** Use the Termination Format below.
 
-        ---
-        **Initial User Request:**
-        - Goal: "{user_input}"
-        - Provided Metadata: {metadata}
-        - User Language: {language}
+    **TERMINATION FORMAT (For Case B only):**
+    `[CONVERSATION_FINISHED] <Short Closing Sentence>`
 
-        **Conversation History:**
-        {history}
-        ---
+    **ANTI-VERBOSITY RULES:**
+    1. **NO SUMMARIES:** Do NOT list what the user just said.
+    2. **NO JUSTIFICATION:** Do NOT say "Based on your input...".
+    3. **SHORT:** The closing sentence must be concise (e.g., "Understood, starting course generation now.", "all right, let's get started with course creation.", "great, let's get started").
 
-        **YOUR RESPONSE:**
-        (Ask a question OR output [CONVERSATION_FINISHED]...)
+    ---
+    **Context:**
+    - Initial Request: "{user_input}"
+    - Metadata: {metadata}
+    
+    **Conversation History:**
+    {history}
+    ---
+    
+    **YOUR RESPONSE (in {language}):**
     """
-
 
     PLAN_SYLLABUS_WITH_PLACEHOLDERS = """
         SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
