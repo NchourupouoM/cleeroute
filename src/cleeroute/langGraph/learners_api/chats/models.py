@@ -96,7 +96,7 @@ class ChatSessionResponse(BaseModel):
 
 
 class MessageResponse(BaseModel):
-    sender: Literal["user", "ai"]
+    sender: Literal["user", "ai","system", "context"]
     messageId: str
     content: str
     createdAt: datetime
