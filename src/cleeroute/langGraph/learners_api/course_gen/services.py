@@ -183,7 +183,7 @@ def heuristic_relevance_score(snippet: Dict, user_input: str) -> float:
 
     return score
 
-async def search_and_filter_youtube_playlists(queries: List[str], user_input: str, language: str, max_results: int = 10) -> List[AnalyzedPlaylist]:
+async def search_and_filter_youtube_playlists(queries: List[str], user_input: str, language: str, max_results: int = 2) -> List[AnalyzedPlaylist]:
     print("--- Starting High-Quality YouTube Search ---")
 
     async def search_task(query: str):
@@ -350,41 +350,7 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
         return None
     
 
-# async def fast_search_youtube(user_input: str, language: str, max_results: int = 10) -> List[str]:
-#     """
-#     Returns the top 3 most relevant YouTube playlists for the user's query.
-#     Optimized for speed: reduces API calls and uses a lightweight scoring heuristic.
-#     """
-#     print(f"--- Fast Search: '{user_input}' [{language}] ---")
-#     try:
-#         def search_sync():
-#             service = get_youtube_service()
-#             search_term = f"{user_input} course tutorial"
-#             req = service.search().list(
-#                 q=search_term,
-#                 part="snippet",
-#                 type="playlist",
-#                 maxResults=max_results, 
-#                 relevanceLanguage=language[:2] if len(language) >= 2 else "en"
-#             )
-#             return req.execute()
-
-#         response = await asyncio.to_thread(search_sync)
-#         candidates = []
-#         for item in response.get("items", []):
-#             snippet = item["snippet"]
-#             pid = item["id"]["playlistId"]
-#             score = heuristic_relevance_score(snippet, user_input)
-#             candidates.append((pid, score))
-
-#         candidates.sort(key=lambda x: x[1], reverse=True)
-#         return [c[0] for c in candidates[:5]]  # Return top 5
-
-#     except Exception as e:
-#         print(f"--- Search Error: {e} ---")
-#         return []
-
-async def fast_search_youtube(user_input: str, language: str, max_results: int = 10) -> List[str]:
+async def fast_search_youtube(user_input: str, language: str, max_results: int = 2) -> List[str]:
     """
     Recherche YouTube.
     max_results définit combien de playlists on veut scanner.
@@ -421,56 +387,6 @@ async def fast_search_youtube(user_input: str, language: str, max_results: int =
         print(f"--- Search Error: {e} ---")
         return []
 
-# async def fetch_playlist_light(playlist_input: str, limit: int = None) -> Optional[AnalyzedPlaylist]:
-#     """
-#         Fetches a YouTube playlist with a reduced video limit
-#         Optimized for speed: minimizes API calls and data processing.
-#     """
-#     playlist_id = playlist_input.split("list=")[1].split("&")[0] if "list=" in playlist_input else playlist_input
-
-#     try:
-#         def fetch_sync():
-#             service = get_youtube_service()
-#             # Fetch playlist metadata
-#             pl_resp = service.playlists().list(part="snippet", id=playlist_id).execute()
-#             if not pl_resp.get("items"):
-#                 return None
-#             pl_info = pl_resp['items'][0]['snippet']
-
-#             # Fetch playlist items (videos)
-#             vid_req = service.playlistItems().list(
-#                 part="snippet",
-#                 playlistId=playlist_id,
-#                 maxResults=50,
-#             )
-#             vid_resp = vid_req.execute()
-
-#             videos = []
-#             for item in vid_resp.get("items", []):
-#                 snippet = item.get("snippet", {})
-#                 vid_id = snippet.get("resourceId", {}).get("videoId")
-#                 if not vid_id:
-#                     continue
-
-#                 videos.append(VideoInfo(
-#                     title=snippet.get("title", ""),
-#                     description=snippet.get("description", ""),
-#                     video_url=f"https://www.youtube.com/watch?v={vid_id}",
-#                     thumbnail_url=snippet.get("thumbnails", {}).get("medium", {}).get("url"),
-#                     channel_title=snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or pl_info.get('channelTitle')
-#                 ))
-
-#             return AnalyzedPlaylist(
-#                 playlist_title=pl_info['title'],
-#                 playlist_url=f"https://www.youtube.com/playlist?list={playlist_id}",
-#                 videos=videos
-#             )
-
-#         return await asyncio.to_thread(fetch_sync)
-
-#     except Exception as e:
-#         print(f"--- Error fetching playlist {playlist_id}: {e} ---")
-#         return None
 
 async def fetch_playlist_light(playlist_input: str, limit: int = None) -> Optional[AnalyzedPlaylist]:
     """
