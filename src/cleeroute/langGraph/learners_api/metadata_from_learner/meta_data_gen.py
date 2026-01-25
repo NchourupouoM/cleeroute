@@ -82,7 +82,7 @@ async def generate_summary_endpoint(
     if not api_key_to_use:
         raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
     
-    llm_to_use = get_llm()
+    llm_to_use = get_llm(api_key=os.getenv("GEMINI_API_KEY"))
 
     summary_llm_chain = get_summary_llm_chain(llm_instance=llm_to_use)
     start_time = time.perf_counter()
@@ -127,7 +127,7 @@ async def generate_details_endpoint(
     if not api_key_to_use:
         raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
     
-    llm_to_use = get_llm()
+    llm_to_use = get_llm(api_key=os.getenv("GEMINI_API_KEY"))
 
     details_llm_chain = get_details_llm_chain(llm_instance=llm_to_use)
 
