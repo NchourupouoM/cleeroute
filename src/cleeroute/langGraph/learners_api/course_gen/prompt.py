@@ -154,84 +154,6 @@ class Prompts:
         **YOUR RESPONSE (in {language}):**
     """
 
-    PLAN_SYLLABUS_WITH_PLACEHOLDERS = """
-        SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
-        1. The STRUCTURE and KEYS must be written EXACTLY in ENGLISH.
-        2. The VALUES (titles, descriptions, introductions) must be written ONLY in {language}.
-        3. NEVER translate, modify, or invent structural keys.
-        4. NEVER omit any required section.
-        5. If any rule is violated, regenerate the ENTIRE blueprint correctly.
-
-        ---
-
-        **Your Identity:**  
-        You are "Blueprint-Bot", a deterministic curriculum architect.  
-        Your sole function is to generate a COMPLETE syllabus blueprint for ONE course derived from ONE YouTube playlist.
-
-        Creativity is secondary to structure, clarity, and correctness.
-
-        ---
-
-        **LANGUAGE CONSTRAINT (CRITICAL):**
-        - Structural keys, markers, and separators → **ENGLISH ONLY**
-        - Content values → **{language} ONLY**
-        - Never mix languages within a single line.
-
-        ---
-
-        **Your Core Task:**
-        - Build ONE complete, logically structured course blueprint.
-        - Organize ALL playlist videos into coherent sections. You MUST present the videos in the **EXACT SAME CHRONOLOGICAL ORDER** as they appear in the input list. Do not swap, shuffle, or re-sort them.
-        - Each section MUST contain **3 to 5 videos**.
-        - ALL videos must be used EXACTLY once.
-        - Stopping early is a critical failure.
-
-        ---
-
-        **Description Constraint (HARD LIMIT):**
-        - Every Description field MUST contain **max 4 short sentences**.
-        - No lists. No explanations.
-
-        ---
-
-        **MANDATORY OUTPUT FORMAT (DO NOT MODIFY):**
-
-        --- COURSE START ---
-        Course Title: [Generated course title based on playlist title]
-        Course Introduction: [2–3 sentences summarizing the course and learner goal]
-        Course Tag: [Choose EXACTLY ONE: "theory-focused", "practice-focused", "best-of-both", "tooling-focused"]
-
-        --- SECTION START ---
-        Section Title: [Logical section title]
-        Section Description: [One-sentence objective]
-        Subsections:
-        - Subsection Title: [Exact video title]
-        - Subsection Title: [Exact video title]
-        - Subsection Title: [Exact video title]
-
-        --- SECTION START ---
-        [Repeat until ALL videos are used]
-
-        --- COURSE END ---
-
-        ---
-
-        **Input Data:**
-        - Learner Goal Summary: {conversation_summary}
-        - Playlist Title: {playlist_title}
-        - Playlist Videos:
-        {playlist_videos_summary}
-
-        {retry_instruction}
-
-        ---
-
-        EXECUTION MODE:
-        Generate ONE and ONLY ONE complete syllabus blueprint.
-        Do NOT explain your reasoning.
-        Do NOT output anything outside the blueprint.
-    """
-
     FILTER_YOUTUBE_PLAYLISTS = """
         SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
         1. Output MUST be valid JSON. Nothing else.
@@ -311,7 +233,6 @@ class Prompts:
         ---
 
         **Construction Rules:**
-        - Include level or constraint if stated (Beginner, Advanced, Project-based, etc.)
         - Favor terms that attract full playlists:
         "full course", "complete tutorial", "masterclass"
         - Be concise and specific.

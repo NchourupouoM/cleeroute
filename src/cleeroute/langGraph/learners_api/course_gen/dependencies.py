@@ -1,7 +1,7 @@
 # in dependencies.py
 from langgraph.pregel import Pregel
 from .graph import create_conversation_graph, create_syllabus_generation_graph
-from src.cleeroute.langGraph.learners_api.course_update.graph import build_modification_graph
+# from src.cleeroute.langGraph.learners_api.course_update.graph import build_modification_graph
 from src.cleeroute.db.checkpointer import get_checkpointer
 import asyncio
 # This global variable will hold our compiled graph instance.
@@ -33,9 +33,9 @@ async def get_syllabus_graph():
     return create_syllabus_generation_graph(checkpointer)
 
 
-def get_updated_graph() -> Pregel:
-    global _modification_graph
-    if _modification_graph is None:
-        _modification_graph = build_modification_graph()
-    return _modification_graph
+# def get_updated_graph() -> Pregel:
+#     global _modification_graph
+#     if _modification_graph is None:
+#         _modification_graph = build_modification_graph()
+#     return _modification_graph
 

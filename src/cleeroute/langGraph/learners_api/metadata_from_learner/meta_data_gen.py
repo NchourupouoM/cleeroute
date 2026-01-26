@@ -35,11 +35,11 @@ class Course_details(BaseModel):
 
 
 # Chaîne LangChain pour la génération du résumé
-def get_summary_llm_chain(llm_instance: ChatGoogleGenerativeAI):
+def get_summary_llm_chain(llm_instance):
     summary_prompt_template = ChatPromptTemplate.from_messages(SUMMARY_PROMPT)
     return summary_prompt_template | llm_instance.with_structured_output(Course_summary)
 
-def get_details_llm_chain(llm_instance: ChatGoogleGenerativeAI):
+def get_details_llm_chain(llm_instance):
     details_prompt_template = ChatPromptTemplate.from_messages(DETAILS_PROMPT)
     return details_prompt_template | llm_instance.with_structured_output(Course_details)
 
@@ -48,12 +48,6 @@ def get_details_llm_chain(llm_instance: ChatGoogleGenerativeAI):
 router_metadata_1 = APIRouter()
 router_metadata_2 = APIRouter()
 
-
-app = FastAPI(
-    title="Course Proposal Generator API",
-    description="API for generating structured course proposals with separate endpoints, each taking only user_prompt as direct input.",
-    version="1.0.0",
-)
 
 # Modèle de requête commun pour les deux endpoints (seulement user_prompt)
 class SinglePromptRequest(BaseModel):
@@ -92,7 +86,7 @@ async def generate_summary_endpoint(
         context_for_llm = contexte_data 
         
         summary_proposal = summary_llm_chain.invoke({
-            "prompt": request.user_prompt,
+            "prompt": "I want to learn" + request.user_prompt,
             "context": context_for_llm,
             "language": request.language
         })
@@ -136,7 +130,7 @@ async def generate_details_endpoint(
         # Utilise le contexte global par défaut
 
         details_proposal = details_llm_chain.invoke({
-            "prompt": request.user_prompt,
+            "prompt": "I want to learn" + request.user_prompt,
             "context": request.user_prompt,
             "language": request.language
         })

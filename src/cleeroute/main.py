@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import time
 
@@ -6,7 +6,6 @@ from src.cleeroute.db.checkpointer import lifespan as checkpointer_lifespan
 from src.cleeroute.db.app_db import app_db_lifespan as application_db_lifespan
 from contextlib import asynccontextmanager
 
-from src.cleeroute.db.services import  fetch_channel_categories,get_sentence_transformer_model,search_videos_pgvector_manual_string
 from src.cleeroute.langGraph.learners_api.metadata_from_learner.meta_data_gen import router_metadata_2, router_metadata_1
 from src.cleeroute.langGraph.course_agents import course_structure_router
 from src.cleeroute.langGraph.project_generator import project_content_router
@@ -17,7 +16,7 @@ from src.cleeroute.langGraph.sections_subsections_sep.section_subsection import 
 # from src.cleeroute.langGraph.updated_syllabus.update_syllabus import course_modification_router, course_human_intervention_router
 from src.cleeroute.langGraph.learners_api.course_gen.routers import syllabus_router
 from src.cleeroute.langGraph.learners_api.course_gen.router_with_streaming import stream_syllabus_router
-from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
+# from src.cleeroute.langGraph.learners_api.course_update.router import updated_router
 from src.cleeroute.langGraph.learners_api.quiz.routers import quiz_router
 from src.cleeroute.langGraph.learners_api.chats.routers import global_chat_router, upload_file_router
 from src.cleeroute.langGraph.learners_api.chats.routers import stream_global_chat_router
@@ -120,7 +119,7 @@ app.include_router(syllabus_router, prefix="", tags=["Syllabus Generators for Le
 # =============================================================================================
 app.include_router(stream_syllabus_router, prefix="", tags=["Streaming Syllabus Generators for Learners using youtube playlists"])
 # =============================================================================================
-app.include_router(updated_router, prefix="", tags=["Updated the learner choose path in the course structure"])
+# app.include_router(updated_router, prefix="", tags=["Updated the learner choose path in the course structure"])
 # =============================================================================================
 app.include_router(quiz_router, prefix="", tags=["Quiz Generators for Learners"])
 # =============================================================================================

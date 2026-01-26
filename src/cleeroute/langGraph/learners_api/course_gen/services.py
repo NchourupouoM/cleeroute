@@ -26,8 +26,14 @@ if not YOUTUBE_API_KEY:
 
 def get_youtube_service():
     """
-        Crée une NOUVELLE instance du client YouTube pour chaque appel.
-        Ceci est indispensable car google-api-python-client (httplib2) n'est pas thread-safe.
+    Creates and returns a new thread-safe YouTube Data API service instance.
+
+    This factory function is essential because the `google-api-python-client` (based on httplib2)
+    is not thread-safe. Creating a fresh instance for each request or task ensures
+    compatibility with concurrent execution (asyncio/threads).
+
+    Returns:
+        googleapiclient.discovery.Resource: An authenticated YouTube API service object.
     """
     return build('youtube', 'v3', developerKey=os.getenv("YOUTUBE_API_KEY"), cache_discovery=False)
 
@@ -37,12 +43,37 @@ YOUTUBE_URL_REGEX = re.compile(
 )
 
 def get_video_id_from_url(url: str) -> Optional[str]:
-    """Extracts the YouTube video ID from various URL formats."""
+    """
+    Extracts the 11-character YouTube video ID from a given URL string.
+
+    Supports various YouTube URL formats including:
+    - Standard: youtube.com/watch?v=...
+    - Short: youtu.be/...
+    - Embed: youtube.com/embed/...
+
+    Args:
+        url (str): The full YouTube URL.
+
+    Returns:
+        Optional[str]: The video ID string if found, otherwise None.
+    """
     match = YOUTUBE_URL_REGEX.search(url)
     return match.group(1) if match else None
 
 def classify_youtube_url(url: str) -> str:
-    """Classifies a YouTube URL as 'playlist', 'video', or 'unknown'."""
+    """
+    Analyzes a YouTube URL to determine if it points to a Playlist, a single Video,
+    or if the type is unrecognizable.
+
+    Args:
+        url (str): The input URL string.
+
+    Returns:
+        str: One of the following values:
+             - 'playlist': If the URL contains a 'list' parameter.
+             - 'video': If the URL points to a video ID or uses 'youtu.be'.
+             - 'unknown': If the URL format does not match expected patterns.
+    """
     try:
         parsed_url = urlparse(url)
         query_params = parse_qs(parsed_url.query)
@@ -59,7 +90,17 @@ def classify_youtube_url(url: str) -> str:
 
 async def fetch_playlist_details(playlist_url: str) -> Optional[AnalyzedPlaylist]:
     """
-    Fetches details for a single playlist given its full URL.
+    High-level wrapper to fetch full details of a playlist from its URL.
+
+    This function parses the URL to extract the playlist ID and then delegates
+    the data retrieval to `_fetch_playlist_items`.
+
+    Args:
+        playlist_url (str): The full URL of the YouTube playlist.
+
+    Returns:
+        Optional[AnalyzedPlaylist]: A structured object containing the playlist metadata
+                                    and its videos, or None if the URL is invalid or fetch fails.
     """
     try:        
         if "list=" in playlist_url:
@@ -77,8 +118,20 @@ async def fetch_playlist_details(playlist_url: str) -> Optional[AnalyzedPlaylist
 
 async def _fetch_playlist_items(playlist_id: str, max_results: int = 1000) -> Optional[AnalyzedPlaylist]:
     """
-    Internal function to fetch playlist items using a thread-local service instance.
-    """
+    Internal function to fetch all videos from a YouTube playlist (with pagination).
+
+    It executes blocking network calls within a thread to prevent blocking the asyncio loop.
+    It retrieves playlist metadata (title, description) and iterates through pages
+    of playlist items to gather video details.
+
+    Args:
+        playlist_id (str): The unique YouTube Playlist ID (not URL).
+        max_results (int, optional): The maximum number of videos to retrieve. Defaults to 1000.
+                                     (Effectively unlimited for standard courses).
+
+    Returns:
+        Optional[AnalyzedPlaylist]: The populated playlist object, or None if the ID is invalid/empty.
+    """ 
     try:
         # Exécution dans un thread séparé pour ne pas bloquer la boucle asyncio
         # et pour isoler l'instance du service (httplib2)
@@ -165,6 +218,22 @@ async def _fetch_playlist_items(playlist_id: str, max_results: int = 1000) -> Op
         return None
 
 def heuristic_relevance_score(snippet: Dict, user_input: str) -> float:
+    """
+    Calculates a heuristic score to rank playlist relevance based on metadata.
+    This is a fast, CPU-bound operation avoiding expensive LLM calls for initial filtering.
+
+    Scoring Logic:
+    - Matches of user keywords in title: +10 pts each.
+    - Educational keywords (course, tutorial...): +15 pts.
+    - Negative keywords (short, funny...): -50 pts.
+
+    Args:
+        snippet (Dict): The 'snippet' dictionary from the YouTube API search response.
+        user_input (str): The user's original search query.
+
+    Returns:
+        float: The calculated relevance score. Higher is better.
+    """
     score = 0.0
     title = snippet.get("title", "").lower()
     desc = snippet.get("description", "").lower()
@@ -183,121 +252,19 @@ def heuristic_relevance_score(snippet: Dict, user_input: str) -> float:
 
     return score
 
-async def search_and_filter_youtube_playlists(queries: List[str], user_input: str, language: str, max_results: int = 2) -> List[AnalyzedPlaylist]:
-    print("--- Starting High-Quality YouTube Search ---")
-
-    async def search_task(query: str):
-        """Fonction interne pour exécuter une recherche unique de manière isolée."""
-        try:
-            # Instanciation locale pour thread-safety
-            local_service = get_youtube_service()
-            
-            request = local_service.search().list(
-                q=query, 
-                part="snippet", 
-                type="playlist", 
-                maxResults=max_results, 
-                order="date"
-            )
-            # Exécution bloquante dans un thread
-            return await asyncio.to_thread(request.execute)
-            
-        except HttpError as e:
-            print(f"--- Search HTTP Error '{query}': {e} ---")
-            return None
-        except Exception as e:
-            print(f"--- Search Generic Error '{query}': {e} ---")
-            return None
-
-    try:
-        # 1. Exécution parallèle des recherches
-        search_tasks = [search_task(query) for query in queries]
-        # Timeout global de 60s pour toutes les recherches
-        search_results = await asyncio.wait_for(
-            asyncio.gather(*search_tasks, return_exceptions=True),
-            timeout=60.0
-        )
-
-        candidate_playlists = []
-        unique_ids = set()
-
-        # 2. Agrégation des résultats
-        for response in search_results:
-            if response is None or isinstance(response, Exception):
-                continue
-                
-            for item in response.get("items", []):
-                playlist_id = item["id"]["playlistId"]
-                if playlist_id not in unique_ids:
-                    snippet = item["snippet"]
-                    candidate_playlists.append({
-                        "id": playlist_id,
-                        "title": snippet["title"],
-                        "description": snippet.get("description", ""),
-                        "publishedAt": snippet["publishedAt"]
-                    })
-                    unique_ids.add(playlist_id)
-
-        if not candidate_playlists:
-            print("--- No playlist candidates found. ---")
-            return []
-
-        # Tri par date (les plus récents d'abord) et sélection des 40 premiers pour le filtre
-        candidate_playlists.sort(key=lambda p: p['publishedAt'], reverse=True)
-        newest_candidates = candidate_playlists[:40]
-
-        # 3. Filtrage Intelligent via LLM
-        candidates_str = json.dumps(newest_candidates, indent=2)
-        prompt = Prompts.FILTER_YOUTUBE_PLAYLISTS.format(
-            user_input=user_input,
-            playlist_candidates=candidates_str,
-            language=language
-        )
-
-        selected_ids = []
-        try:
-            # Instanciation locale du LLM
-            local_llm = get_llm()
-            structured_llm = local_llm.with_structured_output(FilteredPlaylistSelection)
-            
-            llm_response = await structured_llm.ainvoke(prompt)
-
-            if llm_response and hasattr(llm_response, 'selected_ids'):
-                selected_ids = llm_response.selected_ids
-                print(f"--- LLM selected {len(selected_ids)} playlists: {selected_ids} ---")
-            else:
-                print(f"--- WARNING: LLM filter returned invalid response. Fallback to top 5. ---")
-                selected_ids = [p['id'] for p in newest_candidates[:5]]
-        except Exception as e:
-            print(f"--- ERROR during LLM filter: {e}. Fallback to top 5. ---")
-            selected_ids = [p['id'] for p in newest_candidates[:5]]
-
-        # 4. Récupération des détails complets pour les playlists sélectionnées
-        # On limite à 10 pour ne pas surcharger le système
-        final_playlists = []
-        
-        # On parallélise aussi la récupération des détails
-        detail_tasks = [_fetch_playlist_items(pid) for pid in selected_ids[:10]]
-        detail_results = await asyncio.gather(*detail_tasks, return_exceptions=True)
-        
-        for res in detail_results:
-            if res and isinstance(res, AnalyzedPlaylist):
-                final_playlists.append(res)
-
-        print(f"--- Successfully fetched details for {len(final_playlists)} final playlists. ---")
-        return final_playlists
-
-    except asyncio.TimeoutError:
-        print("--- GLOBAL TIMEOUT during YouTube Search (60s limit reached). ---")
-        return []
-    except Exception as e:
-        print(f"--- CRITICAL ERROR during Search Process: {e} ---")
-        return []
 
 async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
     """
-    Analyzes a single user-provided YouTube video URL.
-    Fetches details using a thread-local service instance.
+    Fetches details for a single YouTube video URL.
+
+    This is used when the user provides specific video links instead of a playlist.
+    It resolves the video ID and calls the YouTube API.
+
+    Args:
+        video_url (str): The full URL of the video.
+
+    Returns:
+        Optional[VideoInfo]: A populated video object, or None if the video is private/deleted/invalid.
     """
     video_id = get_video_id_from_url(video_url)
     if not video_id:
@@ -352,8 +319,19 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
 
 async def fast_search_youtube(user_input: str, language: str, max_results: int = 10) -> List[str]:
     """
-    Recherche YouTube.
-    max_results définit combien de playlists on veut scanner.
+    Executes a fast, heuristic-based search for relevant playlists.
+
+    Unlike `search_and_filter_youtube_playlists`, this function DOES NOT use an LLM.
+    It relies on `heuristic_relevance_score` to sort results instantly.
+
+    Args:
+        user_input (str): The search terms.
+        language (str): The user's preferred language code (e.g., "en", "fr").
+        max_results (int, optional): The number of candidates to scan. Defaults to 10.
+
+    Returns:
+        List[str]: A list containing the IDs of the TOP 2 best playlists found.
+                   (Strictly limited to 2 to ensure focus and speed).
     """
     print(f"--- Fast Search: '{user_input}' ---")
     try:
@@ -390,8 +368,15 @@ async def fast_search_youtube(user_input: str, language: str, max_results: int =
 
 async def fetch_playlist_light(playlist_input: str, limit: int = None) -> Optional[AnalyzedPlaylist]:
     """
-    Récupère une playlist.
-    Si limit est None (ou 0), on récupère TOUTES les vidéos de la playlist sans limite.
+    Retrieves playlist details and videos, optimized for speed or exhaustiveness.
+
+    Args:
+        playlist_input (str): Either a full YouTube Playlist URL or a raw Playlist ID.
+        limit (int, optional): The maximum number of videos to fetch. 
+                               If None, it fetches ALL videos in the playlist (pagination loop).
+
+    Returns:
+        Optional[AnalyzedPlaylist]: The populated playlist object, or None if fetch fails.
     """
     playlist_id = playlist_input.split("list=")[1].split("&")[0] if "list=" in playlist_input else playlist_input
 
