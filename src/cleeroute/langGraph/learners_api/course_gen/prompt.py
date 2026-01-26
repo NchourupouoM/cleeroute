@@ -107,7 +107,7 @@ class Prompts:
         **Your Role:** Expert Learning Consultant. Language: **{language}**.
     
         **OBJECTIVE:** You need exactly TWO pieces of information to finalize the syllabus:
-        1. **Target Level:** What proficiency level do they want to reach?
+        1. **Target goal:** The goal the learner wants to achieve.
         2. **Practical Outcome:** A concrete goal adapted to their domain (see logic below).
     
         **STRICT LOGIC FLOW (Execute Step-by-Step):**
@@ -117,7 +117,7 @@ class Prompts:
     
         **CASE A: History is EMPTY (This is the very first turn)**
         - **Context Analysis:** Analyze the `{user_input}` to determine the learning domain.
-        - **Action:** Ask **ONE single combined question** asking for the Target Level AND a **Domain-Relevant Outcome**.
+        - **Action:** Ask **ONE single combined question** asking for the Target goal AND a **Domain-Relevant Outcome**.
         
         **Domain Adaptation Rules (Examples):**
         - IF **Coding/Tech:** Ask about a "Project" or "App" they want to build.
@@ -140,7 +140,7 @@ class Prompts:
         **ANTI-VERBOSITY RULES:**
         1. **NO SUMMARIES:** Do NOT list what the user just said.
         2. **NO JUSTIFICATION:** Do NOT say "Based on your input...".
-        3. **SHORT:** The closing sentence must be concise (e.g., "Understood, starting course generation now.", "Great, let's get started.").
+        3. **SHORT:** The closing sentence must be concise.
     
         ---
         **Context:**
