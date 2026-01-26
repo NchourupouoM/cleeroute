@@ -233,16 +233,66 @@ def parse_blueprint_to_course(blueprint_str: str, video_map: dict) -> Optional[C
         return None
 
 
+# # --- Génération du Syllabus optimisée ---
+# async def fast_syllabus_generation(state: GraphState) -> dict:
+#     """
+#     Generates syllabi for all playlists in parallel.
+#     Optimized for speed: parallel processing and minimal fallback logic.
+#     """
+#     print("--- NODE: Fast Syllabus Generation (Parallel) ---")
+#     merged_str = state.get('merged_resources_str', [])
+#     if not merged_str:
+#         return {"final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[])), "status": "generation_failed_empty"}
+
+#     playlists = [PydanticSerializer.loads(s, AnalyzedPlaylist) for s in merged_str]
+#     lang = state.get('language', 'English')
+#     llm = get_llm()
+
+#     async def process_playlist(pl: AnalyzedPlaylist):
+#         if not pl.videos:
+#             return None
+#         video_map = {v.title.strip(): v for v in pl.videos}
+#         video_list_txt = "\n".join(f"- {v.title}" for v in pl.videos)
+
+#         prompt = Prompts.DIRECT_SYLLABUS_GENERATION.format(
+#             user_input=state['user_input_text'],
+#             language=lang,
+#             playlist_title=pl.playlist_title,
+#             playlist_videos_summary=video_list_txt
+#         )
+
+#         try:
+#             response = await llm.ainvoke(prompt)
+#             course = parse_blueprint_to_course(response.content, video_map)
+#             return course or create_fallback_course(pl, lang)
+#         except Exception as e:
+#             print(f"--- LLM Error for {pl.playlist_title}: {e} ---")
+#             return create_fallback_course(pl, lang)
+
+#     # Process playlists in parallel
+#     tasks = [process_playlist(pl) for pl in playlists]
+#     results = await asyncio.gather(*tasks)
+#     valid_courses = [c for c in results if c is not None]
+
+#     return {
+#         "final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=valid_courses)),
+#         "status": "completed"
+#     }
+
+
 # --- Génération du Syllabus optimisée ---
 async def fast_syllabus_generation(state: GraphState) -> dict:
     """
     Generates syllabi for all playlists in parallel.
-    Optimized for speed: parallel processing and minimal fallback logic.
+    Optimized for speed: parallel processing with robust timeout handling.
     """
     print("--- NODE: Fast Syllabus Generation (Parallel) ---")
     merged_str = state.get('merged_resources_str', [])
     if not merged_str:
-        return {"final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[])), "status": "generation_failed_empty"}
+        return {
+            "final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[])), 
+            "status": "generation_failed_empty"
+        }
 
     playlists = [PydanticSerializer.loads(s, AnalyzedPlaylist) for s in merged_str]
     lang = state.get('language', 'English')
@@ -251,8 +301,12 @@ async def fast_syllabus_generation(state: GraphState) -> dict:
     async def process_playlist(pl: AnalyzedPlaylist):
         if not pl.videos:
             return None
+        
+        # Mapping par titre (nettoyé)
         video_map = {v.title.strip(): v for v in pl.videos}
-        video_list_txt = "\n".join(f"- {v.title}" for v in pl.videos)
+        
+        # Préparation de la liste pour le prompt (nettoyage des sauts de ligne dans les titres)
+        video_list_txt = "\n".join(f"- {v.title.replace('\n', ' ')}" for v in pl.videos)
 
         prompt = Prompts.DIRECT_SYLLABUS_GENERATION.format(
             user_input=state['user_input_text'],
@@ -262,21 +316,46 @@ async def fast_syllabus_generation(state: GraphState) -> dict:
         )
 
         try:
-            response = await llm.ainvoke(prompt)
+            # --- MODIFICATION MAJEURE ICI ---
+            # On augmente le timeout à 60 secondes car générer un plan pour 50+ vidéos prend du temps.
+            # Sans ça, Python coupe la connexion avant que l'IA ait fini d'écrire.
+            response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=60.0)
+            
+            # Parsing du résultat
             course = parse_blueprint_to_course(response.content, video_map)
-            return course or create_fallback_course(pl, lang)
+            
+            if course and len(course.sections) > 0:
+                print(f"--- Blueprint Success for '{pl.playlist_title}' ---")
+                return course
+            else:
+                print(f"--- Blueprint Invalid (Empty Sections) for '{pl.playlist_title}' -> Fallback ---")
+                return create_fallback_course(pl, lang)
+
+        except asyncio.TimeoutError:
+            print(f"--- ⏳ TIMEOUT (60s) for '{pl.playlist_title}'. LLM took too long -> Fallback ---")
+            return create_fallback_course(pl, lang)
+            
         except Exception as e:
-            print(f"--- LLM Error for {pl.playlist_title}: {e} ---")
+            print(f"--- ❌ LLM Error for '{pl.playlist_title}': {e} -> Fallback ---")
             return create_fallback_course(pl, lang)
 
     # Process playlists in parallel
     tasks = [process_playlist(pl) for pl in playlists]
     results = await asyncio.gather(*tasks)
+    
     valid_courses = [c for c in results if c is not None]
+
+    # Sécurité supplémentaire : si tout échoue (très rare avec le fallback), on renvoie vide proprement
+    if not valid_courses:
+         return {
+            "final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[])), 
+            "status": "generation_failed_empty"
+        }
 
     return {
         "final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=valid_courses)),
-        "status": "completed"
+        "status": "completed",
+        "merged_resources_str": [] # Nettoyage de la mémoire
     }
 
 
@@ -379,8 +458,11 @@ async def fast_data_collection(state: GraphState) -> dict:
         ids = await fast_search_youtube(search_query, lang)
 
         if ids:
+
+            # On prend slice [:2] pour être absolument sûr de ne pas dépasser 2 playlists
+            target_ids = ids[:2]
             # On récupère les playlists
-            fetch_tasks = [fetch_playlist_light(pid, limit=None) for pid in ids[:10]]
+            fetch_tasks = [fetch_playlist_light(pid, limit=None) for pid in target_ids]
             fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
             
             for res in fetch_results:

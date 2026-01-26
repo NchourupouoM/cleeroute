@@ -350,7 +350,7 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
         return None
     
 
-async def fast_search_youtube(user_input: str, language: str, max_results: int = 2) -> List[str]:
+async def fast_search_youtube(user_input: str, language: str, max_results: int = 10) -> List[str]:
     """
     Recherche YouTube.
     max_results définit combien de playlists on veut scanner.
@@ -381,8 +381,8 @@ async def fast_search_youtube(user_input: str, language: str, max_results: int =
 
         # Tri et renvoi des IDs
         candidates.sort(key=lambda x: x[1], reverse=True)
-        return [c[0] for c in candidates] # On renvoie TOUT ce qu'on a trouvé (jusqu'à max_results)
-
+        return [c[0] for c in candidates[:2]]  # On ne renvoie que les IDs des 2 meilleurs candidats
+    
     except Exception as e:
         print(f"--- Search Error: {e} ---")
         return []
