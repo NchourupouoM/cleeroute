@@ -232,54 +232,6 @@ def parse_blueprint_to_course(blueprint_str: str, video_map: dict) -> Optional[C
         print(f"--- Parsing Error: {e} ---")
         return None
 
-
-# # --- Génération du Syllabus optimisée ---
-# async def fast_syllabus_generation(state: GraphState) -> dict:
-#     """
-#     Generates syllabi for all playlists in parallel.
-#     Optimized for speed: parallel processing and minimal fallback logic.
-#     """
-#     print("--- NODE: Fast Syllabus Generation (Parallel) ---")
-#     merged_str = state.get('merged_resources_str', [])
-#     if not merged_str:
-#         return {"final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=[])), "status": "generation_failed_empty"}
-
-#     playlists = [PydanticSerializer.loads(s, AnalyzedPlaylist) for s in merged_str]
-#     lang = state.get('language', 'English')
-#     llm = get_llm()
-
-#     async def process_playlist(pl: AnalyzedPlaylist):
-#         if not pl.videos:
-#             return None
-#         video_map = {v.title.strip(): v for v in pl.videos}
-#         video_list_txt = "\n".join(f"- {v.title}" for v in pl.videos)
-
-#         prompt = Prompts.DIRECT_SYLLABUS_GENERATION.format(
-#             user_input=state['user_input_text'],
-#             language=lang,
-#             playlist_title=pl.playlist_title,
-#             playlist_videos_summary=video_list_txt
-#         )
-
-#         try:
-#             response = await llm.ainvoke(prompt)
-#             course = parse_blueprint_to_course(response.content, video_map)
-#             return course or create_fallback_course(pl, lang)
-#         except Exception as e:
-#             print(f"--- LLM Error for {pl.playlist_title}: {e} ---")
-#             return create_fallback_course(pl, lang)
-
-#     # Process playlists in parallel
-#     tasks = [process_playlist(pl) for pl in playlists]
-#     results = await asyncio.gather(*tasks)
-#     valid_courses = [c for c in results if c is not None]
-
-#     return {
-#         "final_syllabus_options_str": PydanticSerializer.dumps(SyllabusOptions(syllabi=valid_courses)),
-#         "status": "completed"
-#     }
-
-
 # --- Génération du Syllabus optimisée ---
 async def fast_syllabus_generation(state: GraphState) -> dict:
     """
