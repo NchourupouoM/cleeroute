@@ -121,7 +121,7 @@ class FileIngestionService:
         # On le fait en premier pour sécuriser le fichier binaire
         try:
             print(f"--- Uploading {filename} to Azure... ---")
-            storage_path = await self.azure_service.upload_file(file_bytes, filename, session_id)
+            storage_path = await self.azure_service.upload_file(file_bytes, filename, session_id, content_type=file_type )
         except Exception as e:
             print(f"Azure Upload Failed: {e}")
             raise e # Si l'upload échoue, on arrête tout

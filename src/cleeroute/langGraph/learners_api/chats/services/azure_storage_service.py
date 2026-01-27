@@ -2,7 +2,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from azure.storage.blob.aio import BlobServiceClient
-from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+from azure.storage.blob import generate_blob_sas, BlobSasPermissions, ContentSettings
 
 class AzureStorageService:
     def __init__(self):
@@ -12,7 +12,7 @@ class AzureStorageService:
         if not self.connection_string or not self.container_name:
             raise ValueError("Azure Storage configuration missing.")
 
-    async def upload_file(self, file_bytes: bytes, filename: str, session_id: str) -> str:
+    async def upload_file(self, file_bytes: bytes, filename: str, session_id: str, content_type: str) -> str:
         """
             Upload the file and return its internal path (blob_name).
             Structure: session_id/uuid_filename.
@@ -31,9 +31,14 @@ class AzureStorageService:
                 await container_client.create_container()
             
             blob_client = container_client.get_blob_client(unique_name)
+
+            my_content_settings = ContentSettings(
+                content_type=content_type, 
+                content_disposition=f"inline; filename={filename}"
+            )
             
             # Upload
-            await blob_client.upload_blob(file_bytes, overwrite=True)
+            await blob_client.upload_blob(file_bytes, overwrite=True, content_settings=my_content_settings)
             
         return unique_name
 
@@ -59,7 +64,8 @@ class AzureStorageService:
             blob_name=blob_name,
             account_key=account_key,
             permission=BlobSasPermissions(read=True),
-            expiry=datetime.now() + timedelta(hours=expiry_hours)
+            expiry=datetime.now() + timedelta(hours=expiry_hours),
+            content_disposition="inline"
         )
         
         return f"https://{account_name}.blob.core.windows.net/{self.container_name}/{blob_name}?{sas_token}"
