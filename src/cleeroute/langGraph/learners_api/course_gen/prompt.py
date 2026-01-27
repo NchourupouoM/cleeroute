@@ -210,88 +210,63 @@ class Prompts:
         - Prefer inclusion over exclusion when quality is acceptable
     """
 
-    GENERATE_OPTIMIZED_QUERY = """
-        ### ROLE
-        You are an expert in YouTube Search Engine Optimization (SEO). Your task is to convert a user's intent into a single, high-performing search query.
+    CURATE_PLAYLISTS_PROMPT = """
+        You are a Senior Content Curator for a prestigious E-Learning Platform.
 
-        ### INPUT DATA
-        - **Initial Intent:** "{user_input}"
-        - **Context Refinements:** "{conversation_summary}"
-        - **Output Language:** {language}
+        **GOAL:** Select the SINGLE BEST YouTube playlist that matches the learner's specific profile.
 
-        ### INSTRUCTIONS
-        1. **Synthesize:** Combine the 'Initial Intent' with specific technical details found in 'Context Refinements'. The Refinements are critical for specificity.
-        2. **Extract Keywords:** Remove conversational filler (e.g., "I want to learn", "how do I", "please"). Keep only high-value keywords.
-        3. **Optimize for Results:** Append high-yield YouTube suffixes if the intent is educational (e.g., "full course", "tutorial", "roadmap", "project").
-        4. **Translate:** Ensure the final query is strictly in {language}.
+        **LEARNER PROFILE:**
+        - Intent: "{user_input}"
+        - Level/Details: "{conversation_summary}"
+        - Language: "{language}"
 
-        ### STRICT FORMATTING RULES
-        - Output **ONLY** the raw search query string.
-        - **NO** quotation marks, **NO** punctuation, **NO** labels (like "Query:").
-        - **MAX** 10 words.
+        **CANDIDATES (JSON format):**
+        {candidates_json}
 
-        ### EXAMPLES (Few-Shot)
-        Input: "I want to code", Context: "User likes Python and wants to analyze data", Lang: English
-        Output: Python data science full course
+        **SELECTION CRITERIA:**
+        1. **Structure:** Prefer playlists that look like a structured course (progressive steps).
+        2. **Relevance:** Must match the specific intent (e.g., if user wants "App Building", avoid "Theory only").
+        3. **Volume:** Avoid playlists that are too short (<5 videos) or clearly incomplete junk.
+        4. **Authority:** Prefer recognizable educational channels/titles over obscure ones if quality seems higher.
 
-        Input: "lose weight", Context: "User has no equipment, home workout", Lang: English
-        Output: home workout no equipment weight loss
-
-        Input: "apprendre l'anglais", Context: "Niveau débutant, focalisé sur le vocabulaire pro", Lang: French
-        Output: vocabulaire anglais professionnel débutant
-
-        ### YOUR TURN
-        [Generate only the query string based on the Input Data above]
+        **OUTPUT:**
+        Return ONLY a JSON object with the ID of the best playlist and the reason why.
+        Format:
+        {{
+            "selected_playlist_id": "PL_xxxx",
+            "reason": "This playlist offers the most structured approach to..."
+        }}
     """
     
-    DIRECT_SYLLABUS_GENERATION = """
-        SYSTEM PRIORITY RULES:
-        1. Follow the output format EXACTLY.
-        2. Use ALL videos exactly once.
-        3. Section and Subsection Titles MUST match video titles verbatim.
-        4. Descriptions: ONE sentence maximum.
-        5. No extra text before or after.
+    STRUCTURE_GENERATION_PROMPT = """
+        You are an expert Instructional Designer.
 
-        ---
+        **TASK:**
+        Segment the provided YouTube playlist into a structured learning path.
 
-        **Role:**  
-        You are Blueprint-Bot, a deterministic syllabus generator.
-
-        ---
-
-        **Task:**  
-        Generate a complete structured syllabus from a YouTube playlist.
-
-        ---
-
-        **Input Data:**
-        - Learner Goal: "{user_input}"
+        **CONTEXT:**
+        - User Goal: "{user_input}"
         - Playlist Title: "{playlist_title}"
-        - Playlist Videos:
-        {playlist_videos_summary}
+        - Language: "{language}"
 
-        ---
+        **VIDEO LIST (Indexed):**
+        {video_list_text}
 
-        **MANDATORY OUTPUT FORMAT:**
+        **CRITICAL RULES (MUST FOLLOW):**
+        1. **NO REORDERING:** The course MUST follow the exact order of the indices provided [0, 1, 2, ...]. Do NOT shuffle the videos.
 
-        --- COURSE START ---
-        Course Title: [Generated from playlist title]
-        Course Introduction: [Max 2 sentences]
-        Course Tag: [Choose ONE: "theory-focused", "practice-focused", "best-of-both", "tooling-focused"]
+        2. **CONTIGUOUS BLOCKS:** Every section must consist of a block of contiguous indices (e.g., [0, 1, 2, 3]). Do not skip numbers within a section.
 
-        --- SECTION START ---
-        Section Title: [Logical group title]
-        Section Description: [1 sentence]
-        Subsections:
-        - Subsection Title: [Exact video title]
-        - Subsection Title: [Exact video title]
+        3. **GROUPING SIZE:** Each section MUST contain **between 3 and 5 videos**.
+           - If a logical topic has < 3 videos: Merge it with the next topic.
+           - If a logical topic has > 5 videos: Split it into distinct sections (e.g., "Topic Part 1", "Topic Part 2").
 
-        --- SECTION START ---
-        [Repeat until all videos are used]
+        4. **COMPLETENESS & EXCLUSION:** 
+           - Aim to include ALL relevant videos from the list.
 
-        --- COURSE END ---
+        5. **TAG SELECTION:** Choose strictly ONE tag for the course from: ["theory-focused", "practice-focused", "tooling-focused"].
 
-        ---
-
-        EXECUTE NOW.
+        **OUTPUT:**
+        Return ONLY a valid JSON object matching the `CourseBlueprint` schema.
+        In `video_indices`, list the integers belonging to each section.
     """

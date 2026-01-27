@@ -6,7 +6,7 @@ from src.cleeroute.db.checkpointer import lifespan as checkpointer_lifespan
 from src.cleeroute.db.app_db import app_db_lifespan as application_db_lifespan
 from contextlib import asynccontextmanager
 
-from src.cleeroute.langGraph.learners_api.metadata_from_learner.meta_data_gen import router_metadata_2, router_metadata_1
+from src.cleeroute.langGraph.learners_api.metadata_from_learner.meta_data_gen import router_metadata
 from src.cleeroute.langGraph.course_agents import course_structure_router
 from src.cleeroute.langGraph.project_generator import project_content_router
 
@@ -91,17 +91,8 @@ async def add_process_time_header(request: Request, call_next):
     return response
 
 
-# ===================== get videos by category for each subsection ===============
-MODEL_CONFIG = {
-    "model_name": "intfloat/multilingual-e5-small",
-    "use_gpu": True,
-    "use_fp16": True 
-}
-
-# app.include_router(video_search_router, prefix="", tags=["Video Search"])
 # ========================================================================================
-app.include_router(router_metadata_1, prefix="/metadata", tags=["Metadata Generators"])
-app.include_router(router_metadata_2, prefix="/metadata", tags=["Metadata Generators"])
+app.include_router(router_metadata, prefix="/metadata", tags=["Metadata Generators"])
 # =======================================================================================
 app.include_router(course_structure_router, prefix="", tags=["Course Structure Generators"])
 app.include_router(course_structure_router_stream, prefix="", tags=["Course Structure Generators"])

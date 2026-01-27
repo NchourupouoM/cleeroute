@@ -1,14 +1,11 @@
-from src.cleeroute.db.checkpointer import get_checkpointer, db_pool, PickleSerde
-from src.cleeroute.langGraph.learners_api.course_gen.graph import create_syllabus_generation_graph
-from langgraph.pregel import Pregel
+from src.cleeroute.db.checkpointer import db_pool, PickleSerde
+from src.cleeroute.langGraph.learners_api.course_gen.graph_gen import create_syllabus_generation_graph
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from psycopg_pool import AsyncConnectionPool 
 import asyncio
 import psycopg
 import logging
-from google.api_core.exceptions import GoogleAPICallError, RetryError
-
 from src.cleeroute.tasks import celery_app
 
 import os
@@ -59,8 +56,5 @@ async def _generate_syllabus_async(thread_id: str, youtube_api_key: str):
         os.environ['YOUTUBE_API_KEY'] = youtube_api_key if youtube_api_key else os.getenv("YOUTUBE_API_KEY")
 
         final_state = await syllabus_graph.ainvoke({}, config)
-
-        # if final_state:
-        #     await syllabus_graph.aupdate_state(config, final_state)
 
         return {"status": "completed", "thread_id": thread_id}

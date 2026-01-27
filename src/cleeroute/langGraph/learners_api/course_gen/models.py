@@ -128,6 +128,21 @@ class SyllabusOptions(BaseModel):
     syllabi: List[CompleteCourse] = Field(..., description="Contains the different coherent learning paths")
 
 # =============================================
+
+class SectionPlan(BaseModel):
+    """Ce que le LLM va générer : juste la structure."""
+    title: str = Field(..., description="Titre pédagogique de la section/module")
+    description: str = Field(..., description="Bref objectif pédagogique de cette section")
+    video_indices: List[int] = Field(..., description="List of 0-based indices. MUST contain between 3 and 5 videos.")
+
+class CourseBlueprint(BaseModel):
+    """La réponse brute du LLM, très légère."""
+    course_title: str
+    course_introduction: str
+    course_tag: Literal["theory-focused", "practice-focused", "tooling-focused"]
+    sections: List[SectionPlan]
+
+
 class StartJourneyResponse(BaseModel):
     thread_id: str
     next_question: str

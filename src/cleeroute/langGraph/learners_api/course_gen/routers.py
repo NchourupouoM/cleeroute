@@ -209,60 +209,37 @@ async def generate_syllabus(
         next_question="Syllabus generation has started. Please check the status endpoint in a few moments."
     )
 
-
 @syllabus_router.get("/gen_syllabus/{thread_id}/status", response_model=JourneyStatusResponse, summary="Get the status of a journey")
 async def get_journey_status(
     thread_id: str,
-    # On peut utiliser n'importe quel graphe qui partage le même checkpointer
     app_graph: Pregel = Depends(get_syllabus_graph)
 ):
     """
-        **Checks the progress of the background syllabus generation task.**
-
-        Since generation is asynchronous, the frontend must poll this endpoint every few seconds (e.g., every 3-5s) after calling `/course`.
-
-        **Capabilities:**
-        1.  **Real-time Tracking:** It looks into the graph's memory to tell you exactly what the AI is doing right now (e.g., "Searching YouTube", "Drafting Blueprint").
-        2.  **Result Retrieval:** Once finished, it delivers the final JSON syllabus.
-
-        **Return Values (Status):**
-        - `in_progress`: The worker is still busy. The `next_question` field will contain a user-friendly status message (e.g., "Analyzing your request...").
-        - `completed`: Success! The `output` field contains the full `SyllabusOptions` JSON object. Stop polling.
-        - `completed_empty`: The process finished but found no content. The `output` field is empty.
-
-        **return values (progress)**:
-        - `current_step`: The current step in the generation process.
-        - `total_steps`: The total number of steps.
-        - `percentage`: The completion percentage.
-        - `label`: A user-friendly status message (e.g., "Analyzing your request...").
-        - `description`: A more detailed description of the current step.
-
-        **Client Logic:**
-        - IF `status` == `in_progress`: Display `next_question` as a loading toast/spinner text. Wait 3s. Call again.
-        - IF `status` == `completed`: Display the course selection UI using `output`.
+    Checks the progress of the background syllabus generation task.
+    Poll this every 3-5 seconds.
     """
-
     config = {"configurable": {"thread_id": thread_id}}
 
+    # 1. Récupération de l'état du Graphe
     try:
-        # aget_state peut lever une exception si le thread n'existe pas
         snapshot = await app_graph.aget_state(config)
     except Exception:
-        snapshot = None
+        # Si le thread_id n'existe pas ou erreur de connexion DB
+        raise HTTPException(status_code=404, detail="Journey thread not found.")
 
     if not snapshot:
-        raise HTTPException(status_code=404, detail="Journey not found.")
+        raise HTTPException(status_code=404, detail="Journey state is empty.")
 
     state = snapshot.values
-
-    graph_status = state.get('status', 'starting')
     
+    # Récupération du statut actuel (défini dans graph.py)
+    graph_status = state.get('status', 'starting')
     final_syllabus_str = state.get('final_syllabus_options_str')
 
-    # Cas : TERMINE (Succès ou Échec géré)
+    # CAS 1 : PROCESSUS TERMINÉ (Succès ou Échec vide)
     if graph_status in ["completed", "generation_failed_empty"]:
         
-        # Préparer les stats de fin
+        # Statut 100%
         progress = JourneyProgress(
             current_step=TOTAL_STEPS,
             total_steps=TOTAL_STEPS,
@@ -273,15 +250,17 @@ async def get_journey_status(
 
         output_dict = {"syllabi": []}
         
-        # Tentative de chargement du résultat
+        # Désérialisation sécurisée
         if final_syllabus_str and final_syllabus_str != 'null':
             try:
                 syllabus_obj = PydanticSerializer.loads(final_syllabus_str, SyllabusOptions)
                 if syllabus_obj.syllabi:
                     output_dict = syllabus_obj.model_dump()
-            except:
-                pass
+            except Exception as e:
+                print(f"Error parsing final syllabus: {e}")
+                # On laisse output_dict vide en cas d'erreur de parsing
 
+        # Réponse finale
         if output_dict["syllabi"]:
             return JourneyStatusResponse(
                 status="completed",
@@ -290,6 +269,7 @@ async def get_journey_status(
                 progress=progress
             )
         else:
+            # Cas où le graphe a fini mais n'a rien trouvé/généré
             return JourneyStatusResponse(
                 status="generation_failed_empty",
                 thread_id=thread_id,
@@ -298,9 +278,14 @@ async def get_journey_status(
                 progress=progress
             )
 
-    # Cas : EN COURS
-    mapping = PROGRESS_MAPPING.get(graph_status, PROGRESS_MAPPING["starting"])
+    # On récupère les infos d'affichage basées sur le statut technique
+    mapping = PROGRESS_MAPPING.get(graph_status, PROGRESS_MAPPING["unknown"])
+    
+    # Calcul du pourcentage
     percent = int((mapping["step"] / TOTAL_STEPS) * 100)
+    # On plafonne à 90% tant que ce n'est pas fini pour l'UX
+    if percent >= 100: 
+        percent = 90 
 
     progress_data = JourneyProgress(
         current_step=mapping["step"],

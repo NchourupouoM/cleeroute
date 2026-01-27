@@ -1,27 +1,20 @@
 # In routers.py
 
 import uuid
-from typing import Dict, Optional
-from .tasks import generate_syllabus_task
-
+from typing import Optional
 import os
-from fastapi import APIRouter, HTTPException, Body, Depends, BackgroundTasks, Header
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Header
 from langgraph.pregel import Pregel
 
 from .config import PROGRESS_MAPPING, TOTAL_STEPS
 
 from .models import (
     SyllabusRequest, 
-    SyllabusOptions, 
-    StartJourneyResponse, 
     ContinueJourneyRequest, 
-    JourneyStatusResponse
 )
 
-from .state import GraphState, PydanticSerializer
-from .dependencies import get_conversation_graph, get_syllabus_graph
-from .tasks import generate_syllabus_task
-from .models import JourneyProgress, JourneyStatusResponse
+from .state import PydanticSerializer
+from .dependencies import get_conversation_graph
 
 # for treamings APIs 
 from fastapi.responses import StreamingResponse

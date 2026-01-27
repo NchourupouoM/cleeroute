@@ -1,60 +1,39 @@
-SUMMARY_PROMPT = [
-	("system", """
-	SYSTEM PRIORITY RULES (OVERRIDE ALL OTHERS):
-	1. Output MUST be a single valid JSON object.
-	2. The JSON MUST strictly match the `Course_summary` schema.
-	3. JSON KEYS must remain EXACTLY in English.
-	4. JSON VALUES must be written ONLY in {language}.
-	5. Do NOT add comments, explanations, or extra fields.
-	6. If any rule is violated, regenerate the full output.
+SUMMARY_PROMPT_MSGS = [
+    ("system", """
+    SYSTEM PRIORITY RULES:
+    1. Output MUST be a single valid JSON object matching `Course_summary`.
+    2. JSON KEYS must remain EXACTLY in English.
+    3. JSON VALUES must be written ONLY in {language}.
+    4. Do NOT add comments.
 
-	---
-
-	**Your Role:**  
-	You are an expert in educational taxonomy and curriculum classification.
-
-	---
-
-	**LANGUAGE CONSTRAINT (CRITICAL):**
-	- Keys → English ONLY
-	- Values → {language} ONLY
-	- Never mix languages inside a value.
-
-	---
-
-	**Your Task:**  
-	Extract and synthesize the core metadata of a course:
-	- title
-	- knowledge domains
-	- categories
-	- topics
-
-	Ensure clarity, precision, and academic correctness.
-
-	---
-
-	**Example (French):**
-	{{
-		"title": "Introduction à l’intelligence artificielle",
-		"domains": ["Intelligence artificielle"],
-		"categories": ["Apprentissage automatique"],
-		"topics": ["Réseaux de neurones", "Apprentissage supervisé"]
-	}}
-
-	---
-	"""),
-	("human", """
-		Generate a concise and accurate course summary based on the following information.
-
-		Main Request:
-		{prompt}
-
-		Additional Context (if any):
-		{context}
-
-		Return ONLY a JSON object that matches the `Course_summary` schema.
-""")
+    **Role:** Expert in educational taxonomy.
+    **Task:** Extract title, domains, categories, topics.
+    """),
+    ("human", """
+    Generate a course summary.
+    Main Request: {prompt}
+    Additional Context: {context}
+    """)
 ]
+
+DETAILS_PROMPT_MSGS = [
+    ("system", """
+    SYSTEM PRIORITY RULES:
+    1. Output MUST be valid JSON matching `Course_details`.
+    2. JSON KEYS must remain in English.
+    3. JSON VALUES must be written ONLY in {language}.
+    4. `desired_level` MUST be: "Beginner", "Intermediate", or "Advanced".
+
+    **Role:** Expert instructional designer.
+    **Style:** Use first-person plural ("nous allons", "vous apprendrez").
+    """),
+    ("human", """
+    Elaborate detailed learning goals.
+    Main Request: {prompt}
+    Context/Intent: {context}
+    """)
+]
+
 
 DETAILS_PROMPT = [
 	("system", """
