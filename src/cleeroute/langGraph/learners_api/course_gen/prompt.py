@@ -211,38 +211,39 @@ class Prompts:
     """
 
     GENERATE_OPTIMIZED_QUERY = """
-        SYSTEM PRIORITY RULES:
-        1. Output ONE single search query.
-        2. No explanations. No punctuation. No quotes.
-        3. Maximum 10 words.
-        4. Language must be {language} ONLY.
+        ### ROLE
+        You are an expert in YouTube Search Engine Optimization (SEO). Your task is to convert a user's intent into a single, high-performing search query.
 
-        ---
+        ### INPUT DATA
+        - **Initial Intent:** "{user_input}"
+        - **Context Refinements:** "{conversation_summary}"
+        - **Output Language:** {language}
 
-        **Task:**  
-        Generate ONE optimized YouTube search query reflecting the learner’s goal and constraints.
+        ### INSTRUCTIONS
+        1. **Synthesize:** Combine the 'Initial Intent' with specific technical details found in 'Context Refinements'. The Refinements are critical for specificity.
+        2. **Extract Keywords:** Remove conversational filler (e.g., "I want to learn", "how do I", "please"). Keep only high-value keywords.
+        3. **Optimize for Results:** Append high-yield YouTube suffixes if the intent is educational (e.g., "full course", "tutorial", "roadmap", "project").
+        4. **Translate:** Ensure the final query is strictly in {language}.
 
-        ---
+        ### STRICT FORMATTING RULES
+        - Output **ONLY** the raw search query string.
+        - **NO** quotation marks, **NO** punctuation, **NO** labels (like "Query:").
+        - **MAX** 10 words.
 
-        **Context:**
-        - Initial Goal: "{user_input}"
-        - Conversation Summary:
-        {conversation_summary}
-        - Target Language: {language}
+        ### EXAMPLES (Few-Shot)
+        Input: "I want to code", Context: "User likes Python and wants to analyze data", Lang: English
+        Output: Python data science full course
 
-        ---
+        Input: "lose weight", Context: "User has no equipment, home workout", Lang: English
+        Output: home workout no equipment weight loss
 
-        **Construction Rules:**
-        - Favor terms that attract full playlists:
-        "full course", "complete tutorial", "masterclass"
-        - Be concise and specific.
+        Input: "apprendre l'anglais", Context: "Niveau débutant, focalisé sur le vocabulaire pro", Lang: French
+        Output: vocabulaire anglais professionnel débutant
 
-        ---
-
-        **Output:**  
-        [Single query string only]
+        ### YOUR TURN
+        [Generate only the query string based on the Input Data above]
     """
-
+    
     DIRECT_SYLLABUS_GENERATION = """
         SYSTEM PRIORITY RULES:
         1. Follow the output format EXACTLY.
