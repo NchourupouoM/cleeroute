@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field, field_validator
 from typing import Literal, Dict
 
 # --------------------------
@@ -77,9 +77,7 @@ class SyllabusRequest(BaseModel):
         description="The target language for the course content and interaction (e.g., 'French', 'Spanish', 'Swahili')."
     )
 
-# --------------------------
 # YouTube / Video models
-# --------------------------
 class VideoInfo(BaseModel):
     title: str
     description: Optional[str] = None
@@ -93,9 +91,7 @@ class AnalyzedPlaylist(BaseModel):
     playlist_url: HttpUrl
     videos: List[VideoInfo]
 
-# --------------------------
 # Course & Syllabus models
-# --------------------------
 class Project(BaseModel):
     title: str
     description: str
@@ -133,7 +129,15 @@ class SectionPlan(BaseModel):
     """Ce que le LLM va générer : juste la structure."""
     title: str = Field(..., description="Titre pédagogique de la section/module")
     description: str = Field(..., description="Bref objectif pédagogique de cette section")
-    video_indices: List[int] = Field(..., description="List of 0-based indices. MUST contain between 3 and 5 videos.")
+
+    start_index: int = Field(..., description="Index of the first video in this section.")
+    end_index: int = Field(..., description="Index of the last video in this section.")
+
+    @field_validator('end_index')
+    def check_range(cls, v, values):
+        if 'start_index' in values.data and v < values.data['start_index']:
+            raise ValueError('end_index must be >= start_index')
+        return v
 
 class CourseBlueprint(BaseModel):
     """La réponse brute du LLM, très légère."""
