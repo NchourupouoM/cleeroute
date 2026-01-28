@@ -22,7 +22,7 @@ def get_vision_model(api_key: str = None) -> ChatGoogleGenerativeAI:
     if not api_key:
         api_key = os.getenv("GEMINI_API_KEY")
     return ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_2", "gemini-2.5-flash"), 
+        model=os.getenv("VISION_MODEL", "gemini-2.5-flash"), 
         google_api_key=api_key,
         temperature=0.1
     )
