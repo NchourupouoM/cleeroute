@@ -6,8 +6,6 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-EMBEDDING_MODEL = "models/text-embedding-004"
-
 
 def get_llm(api_key: str = None) -> ChatGoogleGenerativeAI:
     if not api_key:
@@ -31,7 +29,7 @@ def get_embedding_model(api_key: str = None):
     if not api_key:
         api_key = os.getenv("GEMINI_API_KEY")
     return GoogleGenerativeAIEmbeddings(
-        model=EMBEDDING_MODEL,
+        model=os.getenv("EMBEDDING_MODEL", EMBEDDING_MODEL),
         google_api_key=api_key,
         task_type="retrieval_document"
     )
