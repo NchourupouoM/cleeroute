@@ -287,3 +287,54 @@ async def smart_search_and_curate(user_input: str, conversation_summary: str, la
     except Exception as e:
         print(f"--- Curation AI Failed ({e}), falling back to heuristic ---")
         return [c["id"] for c in candidates[:2]]
+
+# The last resort
+async def get_emergency_video_resource(user_input: str) -> Optional[AnalyzedPlaylist]:
+    """
+    DERNIER RECOURS : Trouve une vidéo unique longue (tuto) et la déguise en Playlist.
+    Utilisé quand aucune playlist n'est trouvée.
+    """
+    print(f"--- 🚨 Triggering EMERGENCY VIDEO SEARCH for: {user_input} ---")
+    service = get_youtube_service()
+    
+    try:
+        def search_sync():
+            # On cherche une vidéo, longue (>20min si possible via videoDuration='long' mais l'API standard ne le garantit pas toujours facilement sans filters complexes, on reste simple)
+            # On ajoute "tutorial" ou "guide" pour viser de l'éducatif
+            return service.search().list(
+                q=f"{user_input} tutorial guide", 
+                type="video", 
+                part="snippet", 
+                maxResults=1
+            ).execute()
+            
+        res = await asyncio.to_thread(search_sync)
+        items = res.get("items", [])
+        
+        if not items:
+            return None
+            
+        item = items[0]
+        snippet = item["snippet"]
+        vid_id = item["id"]["videoId"]
+        
+        # On crée un objet VideoInfo
+        video = VideoInfo(
+            title=snippet["title"],
+            description=snippet["description"],
+            video_url=f"https://www.youtube.com/watch?v={vid_id}",
+            thumbnail_url=snippet["thumbnails"].get("medium", {}).get("url"),
+            channel_title=snippet["channelTitle"]
+        )
+        
+        # On l'emballe dans une "AnalyzedPlaylist" artificielle pour que le reste du code marche
+        return AnalyzedPlaylist(
+            playlist_title=f"Course: {snippet['title']}", # Titre adapté
+            playlist_description=f"{user_input} course",
+            playlist_url=f"https://www.youtube.com/watch?v={vid_id}",
+            videos=[video]
+        )
+        
+    except Exception as e:
+        print(f"Emergency Search Failed: {e}")
+        return None

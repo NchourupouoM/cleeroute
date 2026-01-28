@@ -10,7 +10,7 @@ from .prompt import Prompts
 import asyncio
 from googleapiclient.discovery import build
 from .models import VideoInfo
-from .services import smart_search_and_curate, fetch_playlist_light, classify_youtube_url, analyze_single_video, get_youtube_service
+from .services import smart_search_and_curate, fetch_playlist_light, classify_youtube_url, analyze_single_video, get_emergency_video_resource, get_youtube_service
 from .models import SyllabusOptions, CompleteCourse, AnalyzedPlaylist, VideoInfo, Section, Subsection, CourseBlueprint
 from dotenv import load_dotenv
 from src.cleeroute.langGraph.learners_api.utils import resilient_retry_policy, get_llm
@@ -122,7 +122,7 @@ async def fast_data_collection(state: GraphState) -> dict:
                 playlists.append(AnalyzedPlaylist(playlist_title="Custom Selection", playlist_url="http://yt.com", videos=[r]))
 
     # CAS B: RECHERCHE INTELLIGENTE
-    else:
+    if not playlists:
         # Contextualisation légère
         query = user_text
         summary = ""
@@ -139,6 +139,52 @@ async def fast_data_collection(state: GraphState) -> dict:
             print(f"--- Fetching {len(target_ids)} curated playlists ---")
             fetched = await asyncio.gather(*[fetch_playlist_light(pid) for pid in target_ids])
             playlists = [p for p in fetched if p and p.videos]
+
+    # ---------------------------------------------------------
+    # Cas c : ULTIMATE SAFETY NET (Si toujours rien)
+    # ---------------------------------------------------------
+    if not playlists:
+        print("--- ⚠️ No playlists found via standard search. Activating SAFETY NET. ---")
+        
+        # Fallback A : On réessaie une recherche YouTube très large sans IA
+        try:
+            print("--- Attempting Broad Search Fallback ---")
+            service = get_youtube_service()
+            broad_res = await asyncio.to_thread(
+                service.search().list(q=user_text, type="playlist", part="snippet", maxResults=1).execute
+            )
+            items = broad_res.get("items", [])
+            if items:
+                pid = items[0]["id"]["playlistId"]
+                pl = await fetch_playlist_light(pid)
+                if pl and pl.videos:
+                    playlists.append(pl)
+        except Exception as e:
+            print(f"Broad Search Error: {e}")
+
+    if not playlists:
+        print("--- Attempting Single Video Fallback ---")
+        emergency_pl = await get_emergency_video_resource(user_text)
+        if emergency_pl:
+            playlists.append(emergency_pl)
+
+    # ---------------------------------------------------------
+    # ÉTAPE 4 : GARANTIE ABSOLUE (Fake Content si API YouTube down)
+    # ---------------------------------------------------------
+    if not playlists:
+        print("--- ☠️ TOTAL FAILURE (API Down?). Generating Placeholder. ---")
+        # On génère un objet minimal pour que le front ne crash pas
+        playlists.append(AnalyzedPlaylist(
+            playlist_title=f"Course: {user_text}",
+            playlist_url="https://youtube.com",
+            playlist_description="Automatic generation failed. Please refine your request.",
+            videos=[VideoInfo(
+                title=f"Introduction to {user_text}",
+                video_url="https://www.youtube.com",
+                description="We could not find specific resources, but you can start searching here.",
+                thumbnail_url="https://via.placeholder.com/320x180.png?text=No+Content+Found"
+            )]
+        ))
 
     serialized = [PydanticSerializer.dumps(p) for p in playlists]
     return {"merged_resources_str": serialized, "status": "resources_merged"}
