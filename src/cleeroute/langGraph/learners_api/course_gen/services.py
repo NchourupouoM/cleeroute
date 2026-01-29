@@ -16,6 +16,7 @@ from .models import AnalyzedPlaylist, VideoInfo, FilteredPlaylistSelection
 from .prompt import Prompts
 
 from src.cleeroute.langGraph.learners_api.utils import get_llm
+from src.cleeroute.db.user_service import get_active_pool
 
 load_dotenv()
 
@@ -184,109 +185,106 @@ async def analyze_single_video(video_url: str) -> Optional[VideoInfo]:
     except:
         return None
 
-async def smart_search_and_curate(user_input: str, conversation_summary: str, language: str) -> List[str]:
+async def smart_search_and_curate(
+    user_input: str, 
+    conversation_summary: str, 
+    language: str, 
+    limit: int = 2
+) -> List[str]:
     """
-    Recherche intelligente :
-    1. Récupère 15 candidats.
-    2. Applique des filtres techniques (Hard Filter).
-    3. Utilise un LLM pour choisir le meilleur (Soft Filter).
+    Recherche 100% Curée par IA avec "Quality Cut-off".
     """
-    print(f"---Smart Curation for: '{user_input}' ---")
+    print(f"--- AI-Driven Curation for: '{user_input}' (Max: {limit}) ---")
     
     service = get_youtube_service()
-    
-    # 1. BROAD SEARCH (On élargit à 15 résultats)
-    # On force "playlist" et on ajoute des termes pédagogiques
+
+    # 1. BROAD SEARCH (limit + 10)
+    fetch_count = min(limit + 10, 25)
     search_term = f"{user_input} course tutorial full"
     
     try:
         def search_sync():
             return service.search().list(
-                q=search_term,
-                part="snippet",
-                type="playlist",
-                maxResults=15, 
-                relevanceLanguage=language[:2]
+                q=search_term, part="snippet", type="playlist",
+                maxResults=fetch_count, relevanceLanguage=language[:2]
             ).execute()
-            
         response = await asyncio.to_thread(search_sync)
     except Exception as e:
         print(f"Search API Error: {e}")
         return []
 
     candidates = []
-    
-    # 2. HARD FILTERING (Règles métier impératives)
-    # Mots-clés à bannir absolument
-    BLACKLIST_KEYWORDS = ["gameplay", "reaction", "trailer", "music", "mix", "funny", "memes", "shorts"]
+    # On ajoute "compilation" et "best of" qui sont souvent des nids à contenu vrac
+    BLACKLIST = ["gameplay", "reaction", "trailer", "music", "mix", "funny", "memes", "shorts", "compilation"]
     
     for item in response.get("items", []):
         snippet = item["snippet"]
         title = snippet["title"]
-        desc = snippet["description"]
         pid = item["id"]["playlistId"]
         
-        # Filtre A: Mots interdits
-        if any(bad in title.lower() for bad in BLACKLIST_KEYWORDS):
-            continue
-            
-        # Filtre B: Chaînes "Topic" (souvent générées auto par YouTube Musique)
-        if "Topic" in snippet["channelTitle"]:
-            continue
+        if any(bad in title.lower() for bad in BLACKLIST): continue
+        if "Topic" in snippet["channelTitle"]: continue
 
-        # (Optionnel) Filtre C: Récupérer le itemCount via une 2ème requête batch 
-        # pour virer les playlists < 4 vidéos. Pour la vitesse, on saute ça ici, 
-        # mais pour la qualité V1, c'est recommandé.
         candidates.append({
             "id": pid,
             "title": title,
-            "channel": snippet["channelTitle"],
-            "description": desc[:200] # On tronque pour économiser des tokens
+            "channel": snippet["channelTitle"]
         })
 
-    if not candidates:
-        return []
+    if not candidates: return []
+    # Si on a très peu de candidats, on laisse l'IA juger quand même, 
+    # sauf si c'est vraiment vide.
 
-    # Si on a moins de 3 candidats, on renvoie tout sans LLM pour aller vite
-    if len(candidates) <= 3:
-        return [c["id"] for c in candidates]
-
-    # 3. LLM CURATION (L'intelligence)
-    # On demande au LLM de choisir le meilleur parmi les candidats restants
-    llm = get_llm()
+    # 2. LLM SELECTION
+    llm = get_llm() # Gemini Flash
+    
     prompt = Prompts.CURATE_PLAYLISTS_PROMPT.format(
+        limit=limit,
         user_input=user_input,
-        conversation_summary=conversation_summary,
+        conversation_summary=conversation_summary, 
         language=language,
         candidates_json=json.dumps(candidates)
     )
 
     try:
-        # On utilise invoke simple car on veut juste une réponse courte JSON
-        ai_msg = await llm.ainvoke(prompt)
-        content = ai_msg.content.strip()
+        ai_msg = await asyncio.wait_for(llm.ainvoke(prompt), timeout=5.0)
         
-        # Nettoyage JSON (markdown removal)
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].strip()
+        content = ai_msg.content.strip()
+        if "```" in content:
+            content = content.split("```json")[-1].split("```")[0].strip()
             
         selection = json.loads(content)
-        best_id = selection.get("selected_playlist_id")
-        reason = selection.get("reason")
+        selected_ids = selection.get("selected_ids", [])
         
-        print(f"---Selected: {best_id} ({reason}) ---")
-        
-        # On retourne le meilleur en premier, suivi d'un ou deux "backups" au cas où
-        # (On prend le meilleur + les 2 premiers de la liste originale qui ne sont pas le meilleur)
-        backups = [c["id"] for c in candidates if c["id"] != best_id][:1]
-        
-        return [best_id] + backups
+        # Validation
+        if isinstance(selected_ids, list) and len(selected_ids) > 0:
+            print(f"--- AI Selected {len(selected_ids)} playlists (Quality Filter Applied) ---")
+            
+            # Anti-Hallucination : On ne garde que les IDs qui existent vraiment
+            valid_ids = [pid for pid in selected_ids if any(c["id"] == pid for c in candidates)]
+            
+            # --- MODIFICATION CRITIQUE ICI ---
+            # AVANT : On avait une boucle "for c in candidates..." qui complétait jusqu'à la limite.
+            # MAINTENANT : On supprime cette boucle.
+            # Si l'IA n'a gardé que 4 IDs valides sur 10 demandés, c'est qu'elle a jugé les autres mauvais.
+            # On respecte son jugement.
+            
+            return valid_ids[:limit]
 
+        else:
+            print("--- AI returned empty selection (Too strict?). Falling back to Top 2 YouTube. ---")
+
+    except asyncio.TimeoutError:
+        print("--- AI Selection Timeout -> Falling back to YouTube Rank ---")
     except Exception as e:
-        print(f"--- Curation AI Failed ({e}), falling back to heuristic ---")
-        return [c["id"] for c in candidates[:2]]
+        print(f"--- AI Selection Failed ({e}) -> Falling back to YouTube Rank ---")
+
+    # FALLBACK DE SÉCURITÉ
+    # Si l'IA a planté ou n'a rien renvoyé du tout, on prend les 2 premiers de YouTube 
+    # pour ne pas renvoyer une liste vide (ce qui est pire).
+    # On limite à 2 ou 3 max en fallback pour éviter de polluer si on n'est pas sûr.
+    safe_fallback_limit = min(limit, 3)
+    return [c["id"] for c in candidates[:safe_fallback_limit]]
 
 # The last resort
 async def get_emergency_video_resource(user_input: str) -> Optional[AnalyzedPlaylist]:

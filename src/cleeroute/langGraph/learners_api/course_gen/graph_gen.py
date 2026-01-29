@@ -15,7 +15,7 @@ from .models import SyllabusOptions, CompleteCourse, AnalyzedPlaylist, VideoInfo
 from dotenv import load_dotenv
 from src.cleeroute.langGraph.learners_api.utils import resilient_retry_policy, get_llm
 from langchain_core.prompts import ChatPromptTemplate
-
+from src.cleeroute.db.user_service import check_user_premium_status
 
 def build_course_from_blueprint(blueprint: CourseBlueprint, original_videos: List[VideoInfo]) -> CompleteCourse:
     """
@@ -104,6 +104,15 @@ async def fast_data_collection(state: GraphState) -> dict:
     user_text = state.get('user_input_text', "")
     history = state.get('conversation_history', [])
     lang = state.get('language', 'English')
+    user_id = state.get('user_id') 
+
+    is_premium = False
+    if user_id:
+        is_premium = await check_user_premium_status(user_id)
+    
+    # Définition de la limite : 10 pour Premium, 2 pour Free/Anon
+    SEARCH_LIMIT = 10 if is_premium else 2
+    print(f"--- 🔒 Access Level: {'PREMIUM (10)' if is_premium else 'STANDARD (2)'} ---")
     
     playlists = []
     
@@ -132,7 +141,7 @@ async def fast_data_collection(state: GraphState) -> dict:
         
         # 1. Recherche + Curation (Max 3s)
         # On passe le résumé de conversation pour que l'IA choisisse bien
-        target_ids = await smart_search_and_curate(query, summary, lang)
+        target_ids = await smart_search_and_curate(query, summary, lang, limit=SEARCH_LIMIT)
         
         # 2. Fetching des résultats sélectionnés
         if target_ids:

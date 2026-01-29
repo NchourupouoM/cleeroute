@@ -97,6 +97,7 @@ async def start_learning_journey(
         "user_input_links": user_links_str,
         "metadata_str": PydanticSerializer.dumps(request.metadata),
         "language": request.language,
+        "user_id": request.user_id 
     }
 
     # RETOURNER UNE STREAMING RESPONSE

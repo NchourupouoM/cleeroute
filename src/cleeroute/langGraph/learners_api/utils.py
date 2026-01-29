@@ -31,8 +31,7 @@ def get_embedding_model(api_key: str = None):
     return GoogleGenerativeAIEmbeddings(
         model=os.getenv("EMBEDDING_MODEL"),
         google_api_key=api_key,
-        task_type="retrieval_document",
-        client_options={"api_version": "v1"} 
+        task_type="retrieval_document"
     )
 
 resilient_retry_policy = RetryPolicy(

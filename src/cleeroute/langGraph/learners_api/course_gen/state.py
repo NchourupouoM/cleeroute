@@ -50,6 +50,7 @@ def _overwrite(left: Any, right: Any) -> Any:
 # We will deserialize them within the nodes when we need to use them.
 class GraphState(TypedDict):
     # --- Inputs ---
+    user_id: Annotated[Optional[str], _overwrite] 
     user_input_text: Annotated[str, _overwrite] # Stored as str
     user_input_links: Annotated[Optional[List[str]], _overwrite] # Stored as string
     metadata_str: Annotated[str, _overwrite] # Stored as str # Serialized Course_meta_datas

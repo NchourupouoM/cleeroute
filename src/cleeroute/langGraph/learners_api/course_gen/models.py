@@ -65,6 +65,10 @@ class Course_meta_datas(BaseModel):
     desired_level: str
 
 class SyllabusRequest(BaseModel):
+    user_id: Optional[str] = Field(
+        None, 
+        description="The UUID of the user. Used to determine premium limitations."
+    )
     user_input_text: str = Field(..., min_length=10)
     user_input_links: Optional[List[HttpUrl]] = Field(
         None, 
@@ -143,7 +147,7 @@ class CourseBlueprint(BaseModel):
     """La réponse brute du LLM, très légère."""
     course_title: str
     course_introduction: str
-    course_tag: Literal["theory-focused", "practice-focused", "tooling-focused"]
+    course_tag: str
     sections: List[SectionPlan]
 
 

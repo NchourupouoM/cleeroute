@@ -209,35 +209,33 @@ class Prompts:
         - Maximum: 20 IDs
         - Prefer inclusion over exclusion when quality is acceptable
     """
-
     CURATE_PLAYLISTS_PROMPT = """
-        You are a Senior Content Curator for a prestigious E-Learning Platform.
-
-        **GOAL:** Select the SINGLE BEST YouTube playlist that matches the learner's specific profile.
-
-        **LEARNER PROFILE:**
-        - Intent: "{user_input}"
-        - Level/Details: "{conversation_summary}"
-        - Language: "{language}"
-
-        **CANDIDATES (JSON format):**
-        {candidates_json}
-
-        **SELECTION CRITERIA:**
-        1. **Structure:** Prefer playlists that look like a structured course (progressive steps).
-        2. **Relevance:** Must match the specific intent (e.g., if user wants "App Building", avoid "Theory only").
-        3. **Volume:** Avoid playlists that are too short (<5 videos) or clearly incomplete junk.
-        4. **Authority:** Prefer recognizable educational channels/titles over obscure ones if quality seems higher.
-
-        **OUTPUT:**
-        Return ONLY a JSON object with the ID of the best playlist and the reason why.
-        Format:
-        {{
-            "selected_playlist_id": "PL_xxxx",
-            "reason": "This playlist offers the most structured approach to..."
-        }}
-    """
+    SYSTEM: You are a Senior Content Curator.
     
+    TASK: Select UP TO {limit} high-quality playlists.
+    
+    **LEARNER PROFILE:**
+    - Goal: "{user_input}"
+    - Context: "{conversation_summary}"
+    - Language: "{language}"
+    
+    **CANDIDATES:**
+    {candidates_json}
+    
+    **SELECTION CRITERIA:**
+    1. **Strict Relevance:** Eliminate anything that drifts from the specific goal (e.g. general topics when specific tools are requested).
+    2. **Structure:** Prefer step-by-step courses.
+    3. **QUALITY OVER QUANTITY:** 
+       - Do NOT feel forced to reach the limit of {limit}.
+       - If only 5 playlists are truly excellent, return ONLY those 3.
+       - It is better to return fewer high-quality items than to fill the list with irrelevant garbage.
+    4. **Ranking:** Best fit first.
+    
+    **OUTPUT:** 
+    Return strictly a JSON object with a single key "selected_ids".
+    Example: {{ "selected_ids": ["PL_xxxx", "PL_yyyy"] }}
+    """   
+
     STRUCTURE_GENERATION_PROMPT = """
         You are an expert Instructional Designer.
 
@@ -264,7 +262,7 @@ class Prompts:
         4. **COMPLETENESS & EXCLUSION:** 
            - Aim to include ALL relevant videos from the list.
 
-        5. **TAG SELECTION:** Choose strictly ONE tag for the course from: ["theory-focused", "practice-focused", "tooling-focused"].
+        5. **TAG SELECTION:** Choose the rigth tag base on the course content.
 
         **OUTPUT:**
         Return ONLY a valid JSON object matching the `CourseBlueprint` schema.
