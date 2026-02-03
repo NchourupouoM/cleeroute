@@ -69,7 +69,7 @@ class SyllabusRequest(BaseModel):
         None, 
         description="The UUID of the user. Used to determine premium limitations."
     )
-    user_input_text: str = Field(..., min_length=10)
+    user_input_text: str
     user_input_links: Optional[List[HttpUrl]] = Field(
         None, 
         description="A list of YouTube URLs (can be playlists or single videos)."
