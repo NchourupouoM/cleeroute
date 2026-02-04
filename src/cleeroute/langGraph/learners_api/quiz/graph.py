@@ -85,6 +85,23 @@ async def generate_questions_node(state: QuizGraphState) -> dict:
             "questions": PydanticSerializer.dumps([]),
             "chat_history": PydanticSerializer.dumps([])
         }
+    
+def format_quiz_context(question: QuizQuestionInternal, footer_text: str) -> str:
+    """
+    Génère un Markdown formaté rappelant la question, les options et l'action de l'utilisateur.
+    """
+    # Construction de la liste A. B. C. D.
+    options_md = ""
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    
+    for i, option in enumerate(question.options):
+        # Sécurité pour l'index des lettres
+        letter = letters[i] if i < len(letters) else str(i+1)
+        options_md += f"{letter}. {option}\n"
+
+    return f"""Based on the question: {question.questionText}
+{options_md}
+**{footer_text}**"""
 
 
 async def process_interaction_node(state: QuizGraphState) -> dict:
@@ -126,11 +143,22 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
         is_correct = (user_answer_index == target_question.correctAnswerIndex)
         user_answers[question_id] = {"answerIndex": user_answer_index, "isCorrect": is_correct}
 
+        # Calcul de la lettre (A, B, C...)
+        letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        letter_response = letters[user_answer_index] if user_answer_index < len(letters) else str(user_answer_index)
+
+        # Création du contenu Markdown riche
+        formatted_content = format_quiz_context(
+            target_question, 
+            f"My Response is {letter_response}"
+        )
+
+
         # Création message User
         user_message = ChatMessage(
             id=f"chat_{uuid.uuid4()}",
             sender="user",
-            content=f"I choose option: {target_question.options[user_answer_index]}"
+            content=formatted_content
         )
 
         prompt = EVALUATE_ANSWER_PROMPT.format(
@@ -159,10 +187,16 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
         # Pour simplifier le count, on le stocke avec un flag 'skipped': True
         user_answers[question_id] = {"skipped": True, "isCorrect": False}
 
+        # Création du contenu Markdown riche
+        formatted_content = format_quiz_context(
+            target_question, 
+            "Skipped"
+        )
+
         user_message = ChatMessage(
             id=f"chat_{uuid.uuid4()}",
             sender="user",
-            content="I want to skip this question."
+            content=formatted_content
         )
 
         prompt = SKIP_FEEDBACK_PROMPT.format(
@@ -184,10 +218,17 @@ async def process_interaction_node(state: QuizGraphState) -> dict:
     # --- 3. TRAITEMENT HINT ---
     elif interaction_type == "hint":
 
+        # Création du contenu Markdown riche
+        formatted_content = format_quiz_context(
+            target_question, 
+            "Give me a hint"
+        )
+
+
         user_message = ChatMessage(
             id=f"chat_{uuid.uuid4()}", 
             sender="user", 
-            content="Can I have a hint?"
+            content=formatted_content
         )
 
         prompt = GENERATE_HINT_PROMPT.format(
