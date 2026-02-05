@@ -33,7 +33,7 @@ class Prompts:
         - **Output:** Use the Termination Format below.
     
         **TERMINATION FORMAT (For Case B only):**
-        `[CONVERSATION_FINISHED] Let’s build your course`
+        output exactly: `[CONVERSATION_FINISHED] Let’s build your course`
     
         **ANTI-VERBOSITY RULES:**
         1. **NO SUMMARIES:** Do NOT list what the user just said.
