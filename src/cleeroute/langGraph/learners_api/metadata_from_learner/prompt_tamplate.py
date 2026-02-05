@@ -1,22 +1,3 @@
-# Prompt optimisé pour la classification (plus rapide que la génération créative)
-
-CLASSIFICATION_PROMPT = """
-SYSTEM: You are an expert educational classifier.
-
-TASK: Analyze the user's request and map it to ONE category from the list below.
-Language: {language}
-
-AVAILABLE CATEGORIES:
-[{all_categories}]
-
-INSTRUCTIONS:
-1. **Title**: Create a short, engaging course title based on the user request.
-2. **Category**: Select the SINGLE most relevant category from the list above. It must match EXACTLY.
-3. **Topics**: Generate 3-5 specific keywords/skills.
-
-OUTPUT: Return strictly a JSON object matching `AIClassificationResult`.
-"""
-
 SUMMARY_PROMPT_MSGS = [
     ("system", """
     SYSTEM PRIORITY RULES:

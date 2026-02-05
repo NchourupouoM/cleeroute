@@ -285,4 +285,4 @@ for domain, categories in RAW_TAXONOMY.items():
 
 def get_domain_from_category(category: str) -> str:
     """Retourne le domaine associé ou 'General' si non trouvé."""
-    return CATEGORY_TO_DOMAIN.get(category, "General Knowledge")
+    return CATEGORY_TO_DOMAIN.get(category)

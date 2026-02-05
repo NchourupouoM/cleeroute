@@ -7,8 +7,8 @@ from src.cleeroute.db.app_db import app_db_lifespan as application_db_lifespan
 from contextlib import asynccontextmanager
 
 from src.cleeroute.langGraph.learners_api.metadata_from_learner.meta_data_gen import router_metadata
-from src.cleeroute.langGraph.course_agents import course_structure_router
-from src.cleeroute.langGraph.project_generator import project_content_router
+# from src.cleeroute.langGraph.course_agents import course_structure_router
+# from src.cleeroute.langGraph.project_generator import project_content_router
 
 from src.cleeroute.langGraph.streaming_project_content.test_streaming import project_content_router_stream
 from src.cleeroute.langGraph.streaming_course_structure.main_course import course_structure_router_stream
@@ -95,14 +95,14 @@ async def add_process_time_header(request: Request, call_next):
 # ========================================================================================
 app.include_router(router_metadata, prefix="/metadata", tags=["Metadata Generators"])
 # =======================================================================================
-app.include_router(course_structure_router, prefix="", tags=["Course Structure Generators"])
-app.include_router(course_structure_router_stream, prefix="", tags=["Course Structure Generators"])
+# app.include_router(course_structure_router, prefix="", tags=["Course Structure Generators"])
+# app.include_router(course_structure_router_stream, prefix="", tags=["Course Structure Generators"])
 # ===========================================================================================
 app.include_router(course_outline_router, prefix="", tags=["Sections and subsection generators"])
 app.include_router(course_subsections_router, prefix="", tags=["Sections and subsection generators"])
 # =======================================================================================
-app.include_router(project_content_router, prefix="", tags=["Project content Generators"])
-app.include_router(project_content_router_stream, prefix="", tags=["Project content Generators"])
+# app.include_router(project_content_router, prefix="", tags=["Project content Generators"])
+# app.include_router(project_content_router_stream, prefix="", tags=["Project content Generators"])
 # ============================================================================================
 # app.include_router(course_modification_router, prefix="", tags=["Course structure update"])
 # app.include_router(course_human_intervention_router, prefix="", tags=["Course structure update"])
