@@ -1,34 +1,52 @@
 from langchain_core.prompts import PromptTemplate
 
 GENERATE_QUIZ_CONTENT_PROMPT = PromptTemplate.from_template(
-"""You are an expert AI Quiz Generator. Create a concise, accurate quiz in {language}, strictly based on the provided content.
+"""You are an expert AI Exam Creator and Subject Matter Expert in {language}.
 
 {personalization_block}
 
-**Context:**
-- Scope: {scope}
-- User Intent: {user_intent}
-- Content Summary: {content_summary}
+**INPUT CONTEXT:**
+- **Scope:** {scope}
+- **Learner Goal (User Intent):** "{user_intent}"
+- **Course Material (Structure/Transcripts):**
+{content_summary}
 
-**Preferences:**
-- Difficulty: {difficulty}
-- Number of Questions: {question_count}
+---
 
-**Task:**
-Generate a single JSON object with:
-1. `title`: Short, clear, engaging (max 10 words).
-2. `questions`: Exactly {question_count} items, each with:
-   - `questionText`: Concise question.
-   - `options`: 4 plausible answers.
-   - `correctAnswerIndex`: 0-based index.
-   - `explanation`: 1-sentence justification.
-   
-**Rules:**
-- Do not hallucinate; use only provided content.
-- Keep questions and explanations short and clear.
-- Ensure all options are plausible and non-redundant.
+**GENERATION STRATEGY (CRITICAL):**
+Your goal is to test the learner's **mastery of the subject matter**, NOT their ability to read the course outline.
+
+1. **Identify the Topic:** Analyze the `User Intent` and `Course Material` to determine the core subject (e.g., "Python Dictionaries", "Marketing Strategy", "Guitar Chords").
+2. **Hybrid Knowledge Source:**
+   - IF transcripts/details are provided: Use them as the primary source.
+   - IF ONLY titles/descriptions are provided: **You MUST use your own expert internal knowledge** to generate relevant, accurate questions about the identified topics.
+3. **Anti-Meta Rule:** Do **NOT** ask questions about the course structure (e.g., "What is discussed in Section 1?", "What is the title of the video?").
+   - BAD Question: "What does the module about Dictionaries cover?"
+   - GOOD Question: "In Python, which method is used to retrieve a value from a dictionary without raising an error?"
+
+---
+
+**OUTPUT SPECIFICATIONS:**
+- **Difficulty:** {difficulty}
+- **Quantity:** {question_count} questions
+- **Format:** Single JSON object.
+
+**JSON STRUCTURE:**
+{{
+  "title": "Engaging Quiz Title (max 10 words)",
+  "questions": [
+    {{
+      "questionId": "q_1",
+      "questionText": "Clear, concise technical or conceptual question",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctAnswerIndex": 0,
+      "explanation": "Educational explanation of why the answer is correct."
+    }}
+  ]
+}}
 """
 )
+
 
 EVALUATE_ANSWER_PROMPT = PromptTemplate.from_template(
 """You are an encouraging AI Tutor in {language}.
