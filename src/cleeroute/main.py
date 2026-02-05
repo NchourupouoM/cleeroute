@@ -59,8 +59,9 @@ origins = [
     "https://cleeroute.com",
     "http://127.0.0.1",
     "http://127.0.0.1:35084",
-    "http://127.0.0.1:5500", # Pour le développement local avec Live Server
-    "http://localhost:5500", # Pour le développement local avec Live Server
+    "http://127.0.0.1:5500", 
+    "http://localhost:5500",
+    "https://api.cleeroute.com",
 ]
 
 app.add_middleware(

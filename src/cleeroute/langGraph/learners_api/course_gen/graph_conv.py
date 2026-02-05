@@ -35,7 +35,7 @@ async def intelligent_conversation(state: GraphState) -> dict:
     print("--- Conducting Intelligent Conversation ---")
     history_tuples = state.get('conversation_history', [])
     history_str = "\n".join([f"Human: {h}\nAI: {a}" for h, a in history_tuples])
-    llm = get_llm()
+    llm = get_llm(api_key=os.getenv("GEMINI_API_KEY"))
     # # On désérialise les métadonnées pour les rendre lisibles
     metadata = PydanticSerializer.loads(state['metadata_str'], Course_meta_datas)
 
