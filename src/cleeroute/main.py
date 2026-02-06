@@ -39,7 +39,7 @@ async def main_lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Cleeroute AI API",
-    # On utilise notre nouveau lifespan principal
+    description="Cleeroute Artificielle Inteligence API",
     lifespan=main_lifespan
 )
 

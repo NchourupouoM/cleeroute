@@ -15,7 +15,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from src.cleeroute.langGraph.learners_api.utils import get_llm
 # Si tu as besoin du contexte externe
 from src.cleeroute.langGraph.learners_api.metadata_from_learner.prompt_tamplate import CONTEXTE
-from src.cleeroute.langGraph.learners_api.metadata_from_learner.prompt_tamplate import SUMMARY_PROMPT, DETAILS_PROMPT
+from src.cleeroute.langGraph.learners_api.metadata_from_learner.prompt_tamplate import SUMMARY_PROMPT_MSGS, DETAILS_PROMPT_MSGS
 
 load_dotenv()
 
@@ -23,7 +23,7 @@ load_dotenv()
 logger = logging.getLogger("uvicorn.error")
 
 class SinglePromptRequest(BaseModel):
-    user_prompt: str = Field(..., example="Learning langgraph")
+    user_prompt: str = Field(..., example="Learning langgraph and langchain for AI applications in education.")
     language: str = Field(default="English", description="Target language (e.g., 'French', 'Spanish').")
 
 class CourseSummary(BaseModel):
@@ -31,15 +31,14 @@ class CourseSummary(BaseModel):
     title: str = Field(description="Concise and descriptive title.")
     domains: List[str] = Field(description="Primary knowledge domains.")
     categories: List[str] = Field(description="Specific categories.")
-    desired_level: str = Field(default="Beginner",description="Target proficiency: 'Beginner', 'Intermediate', 'Advanced'.")
-
+    topics: List[str] = Field(description="Comprehensive list of keywords/concepts.")
 
 class CourseDetails(BaseModel):
     """Detailed section of a new course."""
-    topics: List[str] = Field(description="Comprehensive list of keywords/concepts.")
     objectives: List[str] = Field(description="Measurable learning objectives (first-person plural).")
     expectations: List[str] = Field(description="Expectations from participants.")
     prerequisites: List[str] = Field(description="Essential prior knowledge.")
+    desired_level: str = Field(description="Target proficiency: 'Beginner', 'Intermediate', 'Advanced'.")
 
 class FullCourseMetadata(BaseModel):
     """Combined model for optimization."""
@@ -63,7 +62,7 @@ async def get_llm_service(
     return get_llm(api_key=api_key)
 
 async def generate_summary_task(llm, user_prompt: str, language: str, context: str) -> CourseSummary:
-    prompt_template = ChatPromptTemplate.from_messages(SUMMARY_PROMPT)
+    prompt_template = ChatPromptTemplate.from_messages(SUMMARY_PROMPT_MSGS)
     chain = prompt_template | llm.with_structured_output(CourseSummary)
     
     # Utilisation de ainvoke (Asynchrone)
@@ -74,7 +73,7 @@ async def generate_summary_task(llm, user_prompt: str, language: str, context: s
     })
 
 async def generate_details_task(llm, user_prompt: str, language: str, context: str) -> CourseDetails:
-    prompt_template = ChatPromptTemplate.from_messages(DETAILS_PROMPT)
+    prompt_template = ChatPromptTemplate.from_messages(DETAILS_PROMPT_MSGS)
     chain = prompt_template | llm.with_structured_output(CourseDetails)
     
     # Utilisation de ainvoke (Asynchrone)
@@ -93,7 +92,7 @@ async def generate_full_metadata(
     llm=Depends(get_llm_service)
 ):
     """
-    OPTIMIZED ENDPOINT: Generates both Summary and Details in PARALLEL.
+    🚀 OPTIMIZED ENDPOINT: Generates both Summary and Details in PARALLEL.
     This is the fastest method (Latence = Max(Summary, Details) instead of Sum).
     """
     start_time = time.perf_counter()
