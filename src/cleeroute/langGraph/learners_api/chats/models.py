@@ -238,3 +238,16 @@ class DeleteUploadedFile(BaseModel):
     status: str
     deletedCount: int
     message: str
+
+# Models for transcripts
+class TranscriptSegment(BaseModel):
+    """Représente une ligne du transcript."""
+    timestamp: str  # ex: "02:15"
+    text: str       # Le texte dit à ce moment
+    offset: Optional[str] = None # Secondes brutes (utile pour cliquer et aller à ce moment dans la vidéo)
+
+class TranscriptResponse(BaseModel):
+    """Réponse complète de l'endpoint."""
+    subsectionId: str
+    videoId: str
+    content: List[TranscriptSegment]

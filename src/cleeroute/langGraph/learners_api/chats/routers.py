@@ -11,7 +11,8 @@ import json
 from fastapi.responses import StreamingResponse
 from datetime import datetime
 # 1. Importations des modèles et du graphe
-from .models import (DeleteResponse, SessionActionResponse, MessageResponse, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, EditMessageRequest, RenameSessionRequest, FileUploadResponse, FileMetadataResponse, FileContentResponse, DeleteUploadedFile)
+from .models import (DeleteResponse, SessionActionResponse, MessageResponse, ChatAskRequest, ChatSessionResponse, CreateSessionRequest, EditMessageRequest, RenameSessionRequest, FileUploadResponse, FileMetadataResponse, FileContentResponse, DeleteUploadedFile, TranscriptResponse, TranscriptSegment)
+
 # from .graph import get_quiz_graph
 
 # Import du sérialiseur que nous utilisons de manière cohérente
@@ -767,6 +768,72 @@ async def prepare_video_context(
         # On ne veut pas casser la navigation frontend si ça échoue, on log juste
         print(f"Pre-heat Error: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@global_chat_router.get("/subsections/{subsectionId}/transcript", response_model=TranscriptResponse)
+async def get_subsection_transcript(
+    subsectionId: str,
+    db: AsyncConnection = Depends(get_app_db_connection)
+):
+    """
+    Retrieves the raw transcript for a specific video/subsection.
+    Used by the frontend to display the text alongside the video player.
+    """
+    try:
+        # 1. Requête simple sur la table partagée
+        cursor = await db.execute(
+            """
+            SELECT video_id, content 
+            FROM subsection_transcripts 
+            WHERE subsection_id = %s
+            """,
+            (subsectionId,)
+        )
+        row = await cursor.fetchone()
+
+        if not row:
+            # 404 si le transcript n'est pas encore généré (ou vidéo sans transcript)
+            raise HTTPException(
+                status_code=404, 
+                detail="Transcript not available yet (processing or missing)."
+            )
+
+        # Mapping (Tuple vs Dict)
+        if isinstance(row, tuple):
+            vid_id, raw_content = row
+        else:
+            vid_id = row['video_id']
+            raw_content = row['content']
+
+        # 2. Parsing du contenu JSONB
+        # Psycopg convertit souvent automatiquement le JSONB en list/dict Python.
+        # Si c'est une string, on la parse.
+        if isinstance(raw_content, str):
+            content_list = json.loads(raw_content)
+        else:
+            content_list = raw_content
+
+        # 3. Conversion en modèle Pydantic
+        segments = [
+            TranscriptSegment(
+                timestamp=item.get("timestamp"),
+                text=item.get("text"),
+                offset=str(item.get("offset", "")) # Conversion safe en string
+            )
+            for item in content_list
+        ]
+
+        return TranscriptResponse(
+            subsectionId=subsectionId,
+            videoId=vid_id or "",
+            content=segments
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"Transcript Fetch Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal error fetching transcript.")
     
 
 # Upload files on a session chat
