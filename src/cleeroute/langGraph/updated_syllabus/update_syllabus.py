@@ -58,7 +58,7 @@
 
 
 # llm_to_use = ChatGoogleGenerativeAI(
-#         model=os.getenv("MODEL_2"),
+#         model=os.getenv("MODEL"),
 #         google_api_key= os.getenv("GEMINI_API_KEY"),
 # )
 
@@ -120,7 +120,7 @@
 #             raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
         
 #         llm_to_use = ChatGoogleGenerativeAI(
-#             model=os.getenv("MODEL_2"),
+#             model=os.getenv("MODEL"),
 #             google_api_key=api_key_to_use,
 #         )
 
@@ -183,7 +183,7 @@
 #         raise HTTPException(status_code=400, detail="Gemini API key is not provided. Please provide it via 'X-Gemini-Api-Key' header or set GEMINI_API_KEY in .env.")
     
 #     llm_to_use = ChatGoogleGenerativeAI(
-#         model=os.getenv("MODEL_2"),
+#         model=os.getenv("MODEL"),
 #         google_api_key=api_key_to_use,
 #     )
 

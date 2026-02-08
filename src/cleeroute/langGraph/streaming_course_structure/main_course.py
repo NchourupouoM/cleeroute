@@ -23,7 +23,7 @@ load_dotenv()
 
 # --- Configuration du LLM ---
 llm = ChatGoogleGenerativeAI(
-    model=os.getenv("MODEL_2"),
+    model=os.getenv("MODEL"),
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.3 # Plus factuel pour la structure
 )

@@ -23,7 +23,7 @@ load_dotenv()
 
 # --- Configuration du LLM ---
 llm = ChatGoogleGenerativeAI(
-    model=os.getenv("MODEL_2", "gemini-1.5-flash"), # Assure un fallback
+    model=os.getenv("MODEL", "gemini-1.5-flash"), # Assure un fallback
     google_api_key=os.getenv("GEMINI_API_KEY"),
     temperature=0.7 # Un peu de créativité pour le Game Master
 )

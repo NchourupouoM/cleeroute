@@ -2,6 +2,8 @@ import os
 import json
 import asyncio
 import re
+import logging
+from datetime import datetime
 from typing import List, Optional, Dict
 from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
@@ -89,7 +91,7 @@ def classify_youtube_url(url: str) -> str:
 async def fetch_playlist_light(playlist_input: str, limit: int = None) -> Optional[AnalyzedPlaylist]:
     """
     Fetches playlist videos. 
-    Optimized: strict limit of 150 videos to prevent LLM Context Window overflow.
+    Optimized: strict limit of 1000 videos to prevent LLM Context Window overflow.
     """
     # Extraction ID propre
     if "list=" in playlist_input:
@@ -149,6 +151,7 @@ async def fetch_playlist_light(playlist_input: str, limit: int = None) -> Option
                 next_page_token = res.get('nextPageToken')
                 if not next_page_token:
                     break
+            video_infos = fix_playlist_order_if_reversed(video_infos)
             
             return AnalyzedPlaylist(
                 playlist_title=pl_info['title'],
@@ -336,3 +339,69 @@ async def get_emergency_video_resource(user_input: str) -> Optional[AnalyzedPlay
     except Exception as e:
         print(f"Emergency Search Failed: {e}")
         return None
+
+logger = logging.getLogger(__name__)
+def fix_playlist_order_if_reversed(videos: List[VideoInfo]) -> List[VideoInfo]:
+    """
+    Analyse une liste de vidéos pour détecter si elle est triée à l'envers 
+    (ordre décroissant/chronologique inverse) et la remet à l'endroit.
+    
+    KPIs : Fiabilité de l'ordre pédagogique, Vitesse d'exécution.
+    """
+    if not videos or len(videos) < 2:
+        return videos
+
+    is_reversed = False
+
+    try:
+        # --- SIGNAL 1 : LES DATES (Priorité Haute) ---
+        # On compare la date du début et de la fin
+        first_date_str = videos[0].published_at
+        last_date_str = videos[-1].published_at
+
+        if first_date_str and last_date_str:
+            # ISO format (ex: 2023-12-01T15:30:00Z)
+            # On remplace Z par +00:00 pour la compatibilité fromisoformat
+            dt_start = datetime.fromisoformat(first_date_str.replace('Z', '+00:00'))
+            dt_end = datetime.fromisoformat(last_date_str.replace('Z', '+00:00'))
+
+            # Si la 1ère vidéo est plus RÉCENTE que la dernière d'au moins 12h
+            # Cela signifie que le créateur met les nouveautés en haut.
+            if (dt_start - dt_end).total_seconds() > 43200: # 12 heures de buffer
+                is_reversed = True
+                print(f"--- Reverse detected by DATE (Newest: {dt_start} vs Oldest: {dt_end}) ---")
+
+        # --- SIGNAL 2 : LES TITRES (Secours si dates identiques) ---
+        # Si les dates sont identiques (cas d'un upload massif le même jour)
+        if not is_reversed:
+            def extract_num(text: str) -> Optional[int]:
+                # Cherche un nombre après un mot clé ou un symbole
+                m = re.search(r'(?:#|part|ep|episode|lesson|cours|video|#)\s*(\d+)', text.lower())
+                if m: return int(m.group(1))
+                # Sinon cherche n'importe quel nombre isolé
+                m = re.search(r'\b(\d+)\b', text)
+                return int(m.group(1)) if m else None
+
+            # Analyse des 3 premières et 3 dernières pour éviter les faux positifs
+            start_indices = [extract_num(v.title) for v in videos[:3] if extract_num(v.title) is not None]
+            end_indices = [extract_num(v.title) for v in videos[-3:] if extract_num(v.title) is not None]
+
+            if start_indices and end_indices:
+                avg_start = sum(start_indices) / len(start_indices)
+                avg_end = sum(end_indices) / len(end_indices)
+
+                # Si le chiffre au début est plus grand qu'à la fin (ex: Part 50 au début, Part 1 à la fin)
+                if avg_start > avg_end:
+                    is_reversed = True
+                    print(f"--- Reverse detected by TITLES (Start avg: {avg_start} > End avg: {avg_end}) ---")
+
+    except Exception as e:
+        logger.error(f"Error in fix_playlist_order_if_reversed: {e}")
+        return videos # Retourne l'ordre original en cas de bug pour la résilience
+
+    # --- INVERSION FINALE ---
+    if is_reversed:
+        # On utilise list(reversed()) pour garantir un nouvel objet liste
+        return list(reversed(videos))
+    
+    return videos

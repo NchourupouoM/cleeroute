@@ -11,7 +11,7 @@ def get_llm(api_key: str = None) -> ChatGoogleGenerativeAI:
     if not api_key:
         api_key = os.getenv("GEMINI_API_KEY")
     return ChatGoogleGenerativeAI(
-        model=os.getenv("MODEL_2"), 
+        model=os.getenv("MODEL"), 
         google_api_key=api_key,
         temperature=0.2
     )

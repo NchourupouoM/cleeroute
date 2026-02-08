@@ -18,7 +18,7 @@ from src.cleeroute.langGraph.learners_api.utils import get_vision_model, get_emb
 
 from src.cleeroute.langGraph.learners_api.chats.services.azure_storage_service import AzureStorageService
 
-VISION_MODEL = os.getenv("MODEL_2", "gemini-2.5-flash")
+VISION_MODEL = os.getenv("MODEL")
 EMBEDDING_MODEL = "models/text-embedding-004"
 
 

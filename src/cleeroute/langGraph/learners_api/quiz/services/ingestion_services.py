@@ -7,7 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 
 # On garde le modèle Vision pour les images
-VISION_MODEL = os.getenv("MODEL_2", "gemini-2.5-flash")
+VISION_MODEL = os.getenv("MODEL")
 
 class FileIngestionService:
     def __init__(self):

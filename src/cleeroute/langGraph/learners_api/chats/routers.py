@@ -775,15 +775,11 @@ async def get_subsection_transcript(
     subsectionId: str,
     db: AsyncConnection = Depends(get_app_db_connection)
 ):
-    """
-    Retrieves the raw transcript for a specific video/subsection.
-    Used by the frontend to display the text alongside the video player.
-    """
     try:
-        # 1. Requête simple sur la table partagée
+        # On récupère aussi le statut et la langue
         cursor = await db.execute(
             """
-            SELECT video_id, content 
+            SELECT video_id, content, language, status
             FROM subsection_transcripts 
             WHERE subsection_id = %s
             """,
@@ -791,50 +787,58 @@ async def get_subsection_transcript(
         )
         row = await cursor.fetchone()
 
+        # Cas 1: Pas de ligne en base = En cours de traitement (ou pas encore demandé)
         if not row:
-            # 404 si le transcript n'est pas encore généré (ou vidéo sans transcript)
-            raise HTTPException(
-                status_code=404, 
-                detail="Transcript not available yet (processing or missing)."
+            # On peut renvoyer un statut 'processing' au lieu de 404 pour que le front sache qu'il doit attendre/poller
+            return TranscriptResponse(
+                subsectionId=subsectionId,
+                videoId="",
+                content=[],
+                status="processing",
+                language=None
             )
 
-        # Mapping (Tuple vs Dict)
         if isinstance(row, tuple):
-            vid_id, raw_content = row
+            vid_id, raw_content, lang, status = row
         else:
-            vid_id = row['video_id']
-            raw_content = row['content']
+            vid_id, raw_content, lang, status = row['video_id'], row['content'], row['language'], row['status']
 
-        # 2. Parsing du contenu JSONB
-        # Psycopg convertit souvent automatiquement le JSONB en list/dict Python.
-        # Si c'est une string, on la parse.
+        # Cas 2: Ligne existe mais statut 'not_found'
+        if status == 'not_found':
+            return TranscriptResponse(
+                subsectionId=subsectionId,
+                videoId=vid_id,
+                content=[], # Liste vide
+                status="not_found",
+                language=None
+            )
+
+        # Cas 3: Succès (status = 'available')
         if isinstance(raw_content, str):
             content_list = json.loads(raw_content)
         else:
             content_list = raw_content
 
-        # 3. Conversion en modèle Pydantic
         segments = [
             TranscriptSegment(
                 timestamp=item.get("timestamp"),
                 text=item.get("text"),
-                offset=str(item.get("offset", "")) # Conversion safe en string
+                offset=str(item.get("offset", ""))
             )
             for item in content_list
         ]
 
         return TranscriptResponse(
             subsectionId=subsectionId,
-            videoId=vid_id or "",
-            content=segments
+            videoId=vid_id,
+            content=segments,
+            status="available",
+            language=lang
         )
 
-    except HTTPException as he:
-        raise he
     except Exception as e:
         print(f"Transcript Fetch Error: {e}")
         raise HTTPException(status_code=500, detail="Internal error fetching transcript.")
-    
 
 # Upload files on a session chat
 ingestion_service = FileIngestionService()

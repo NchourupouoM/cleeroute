@@ -36,7 +36,7 @@ from src.cleeroute.langGraph.learners_api.quiz.services.ingestion_services impor
 from src.cleeroute.langGraph.learners_api.quiz.services.quiz_context_extractor import build_quiz_context_from_db
 from src.cleeroute.langGraph.learners_api.quiz.services.quiz_services import get_quiz_state_from_db
 
-qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL_2"), google_api_key=os.getenv("GEMINI_API_KEY"))
+qa_llm = ChatGoogleGenerativeAI(model=os.getenv("MODEL"), google_api_key=os.getenv("GEMINI_API_KEY"))
 
 
 quiz_router = APIRouter()

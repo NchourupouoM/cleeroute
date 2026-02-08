@@ -88,6 +88,7 @@ class VideoInfo(BaseModel):
     video_url: HttpUrl
     channel_title: Optional[str] = None
     thumbnail_url: Optional[HttpUrl] = None
+    published_at: Optional[str] = None
 
 class AnalyzedPlaylist(BaseModel):
     playlist_title: str
